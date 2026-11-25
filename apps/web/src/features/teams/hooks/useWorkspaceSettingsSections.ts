@@ -1,0 +1,24 @@
+import { Info, ShieldCheck } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useWorkspaceSections } from '@/cloud';
+import type { WorkspaceSummary } from '@/lib/api/endpoints/workspaces';
+import { WORKSPACE_SECTION_GROUPS, type WorkspaceSection } from '../types/workspaceSection';
+import { useWorkspaceQuery } from '@/services/workspaces.service';
+
+export function useWorkspaceSettingsSections(workspace: WorkspaceSummary): WorkspaceSection[] {
+  const t = useTranslations('teams.workspace');
+  const detail = useWorkspaceQuery(workspace.id).data;
+  const sections = useWorkspaceSections(workspace, [
+    { id: 'info', label: t('general'), icon: Info, group: 'settings' },
+    {
+      id: 'managers',
+      label: t('managers.title'),
+      icon: ShieldCheck,
+      group: 'settings',
+      badge: detail && String(detail.managerCount),
+    },
+  ]);
+  return WORKSPACE_SECTION_GROUPS.flatMap((group) =>
+    sections.filter((section) => section.group === group),
+  );
+}

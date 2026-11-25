@@ -1,0 +1,114 @@
+{
+  "title": "Affichage",
+  "layouts": {
+    "kanban": "Kanban",
+    "table": "Liste",
+    "timeline": "Chronologie",
+    "calendar": "Calendrier"
+  },
+  "sortFields": {
+    "manual": "Manuel",
+    "title": "Titre",
+    "identifier": "Numéro de ticket",
+    "status": "État",
+    "priority": "Priorité",
+    "assignee": "Responsable",
+    "type": "Type",
+    "startDate": "Date de début",
+    "dueDate": "Échéance",
+    "created": "Date de création",
+    "updated": "Date de mise à jour"
+  },
+  "groupFields": {
+    "none": "Aucun regroupement",
+    "status": "État",
+    "assignee": "Responsable",
+    "delegate": "Délégué",
+    "priority": "Priorité",
+    "type": "Type",
+    "initiative": "Initiative",
+    "cycle": "Cycle"
+  },
+  "properties": {
+    "id": "ID",
+    "status": "État",
+    "priority": "Priorité",
+    "type": "Type",
+    "assignee": "Responsable",
+    "delegate": "Délégué",
+    "initiative": "Initiative",
+    "cycle": "Cycle",
+    "labels": "Étiquettes",
+    "estimatePoints": "Story points",
+    "estimateTime": "Estimation de temps",
+    "startDate": "Date de début",
+    "dueDate": "Échéance",
+    "created": "Date de création",
+    "updated": "Date de mise à jour",
+    "statusAge": "Temps dans l'état"
+  },
+  "stateTypes": {
+    "backlog": "Backlog",
+    "unstarted": "Non démarré",
+    "started": "En cours",
+    "completed": "Terminé",
+    "canceled": "Annulé"
+  },
+  "timelineScales": {
+    "week": "Semaine",
+    "month": "Mois",
+    "quarter": "Trimestre"
+  },
+  "calendarModes": {
+    "month": "Mois",
+    "byDay": "Par jour",
+    "byWeek": "Par semaine"
+  },
+  "weekStart": {
+    "6": "Samedi",
+    "0": "Dimanche",
+    "1": "Lundi"
+  },
+  "dateFields": {
+    "dueDate": "Échéance",
+    "startDate": "Date de début"
+  },
+  "rows": {
+    "columns": "Colonnes",
+    "grouping": "Regroupement",
+    "swimlanes": "Couloirs",
+    "subGrouping": "Sous-regroupement",
+    "ordering": "Tri",
+    "ascending": "Croissant",
+    "descending": "Décroissant",
+    "emptyColumns": "Colonnes vides",
+    "emptyGroups": "Groupes vides",
+    "links": "Liens",
+    "separateCards": "En cartes distinctes",
+    "separateRows": "En lignes distinctes",
+    "nestedInCard": "Dans la carte parente",
+    "nestedInRow": "Dans la ligne parente",
+    "subtasksCollapsed": "Réduites au départ",
+    "groupsCollapsed": "Groupes réduits au départ",
+    "placeBy": "Positionner selon",
+    "mode": "Mode",
+    "daysShown": "Jours affichés",
+    "weeksShown": "Semaines affichées",
+    "splitByDay": "Diviser par jour",
+    "weekStartsOn": "La semaine commence le",
+    "scale": "Échelle",
+    "dragToReorder": "Glisser pour réordonner",
+    "customField": "Champ personnalisé",
+    "viewIcon": "Icône de la vue"
+  },
+  "sections": {
+    "board": "Tableau",
+    "rows": "Lignes",
+    "show": "Afficher",
+    "subtasks": "Sous-tâches",
+    "cardProperties": "Propriétés de la carte",
+    "columns": "Colonnes",
+    "dates": "Dates"
+  },
+  "layoutCommand": "Affichage {layout}"
+}

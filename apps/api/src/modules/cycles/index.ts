@@ -1,0 +1,289 @@
+import { Elysia, t } from 'elysia';
+import { mcpTool } from '#mcp/generate';
+import { noContent } from '#shared/http';
+import { guards, entityGuard, requiresPermission } from '#shared/guards';
+import { authContext } from '#shared/auth-context';
+import { readableProjectIds, requireUser } from '#shared/access';
+import { boundProjectId, isMcpRequest } from '#shared/mcp-request';
+import { HttpError } from '#shared/lib';
+import { accessErrors, commonErrors, errors } from '#shared/responses';
+import { paginate } from '#shared/pagination';
+import { transferCycleIssues } from '#modules/issues/service';
+import {
+  CrossProjectCycleListResponse,
+  CycleListResponse,
+  CycleOptionListResponse,
+  CyclePageResponse,
+  CycleResponse,
+  StartNextCycleResponse,
+  TransferCycleResponse,
+  completedCyclesQuery,
+  createCycleBody,
+  cycleParams,
+  listCyclesQuery,
+  transferCycleBody,
+  updateCycleBody,
+} from './model';
+import {
+  listCycles,
+  listCyclesInProjects,
+  listPlannedCycles,
+  listCompletedCycles,
+  getCycle,
+  getCycleProjectId,
+  createCycle,
+  updateCycle,
+  deleteCycle,
+  finishCycle,
+  startNextCycle,
+} from './service';
+
+export const cycleRoutes = new Elysia({
+  name: 'cycles',
+  detail: { tags: ['Cycles'] },
+})
+  .use(authContext)
+  .use(guards)
+  // Guard for routes that address a cycle by its own id (no :projectKey in the
+  // path). Set `cycle: "<action>"` in the route options.
+  .macro({
+    cycle: entityGuard(
+      'cycles',
+      'Cycle not found',
+      (p) => getCycleProjectId(Number(p.cycleId)),
+      'cycles',
+    ),
+  })
+
+  .get(
+    '/projects/:projectKey/cycles',
+    async ({ project, query }) =>
+      query.status === 'planned' ? listPlannedCycles(project.id) : listCycles(project.id),
+    {
+      query: listCyclesQuery,
+      permission: ['cycles', 'read'],
+      feature: 'cycles',
+      response: { 200: CycleListResponse, ...commonErrors },
+      detail: {
+        summary: 'List cycles',
+        description: "List a project's cycles, oldest first.",
+        ...mcpTool('list_cycles'),
+      },
+    },
+  )
+
+  // Fills the cycle picker on an issue and the cycle lanes on the board. Read under
+  // work items: planning an issue needs the names, not the cycle pages the `cycles`
+  // resource gates.
+  .get(
+    '/projects/:projectKey/cycles/options',
+    async ({ project }) => {
+      const cycles = await listPlannedCycles(project.id);
+      return cycles.map((c) => ({ id: c.id, name: c.name, status: c.status }));
+    },
+    {
+      permission: ['work_items', 'read'],
+      feature: 'cycles',
+      response: { 200: CycleOptionListResponse, ...accessErrors },
+      detail: {
+        summary: 'List cycle options',
+        description: 'The cycles an issue can be planned into: id, name and status.',
+      },
+    },
+  )
+
+  .get(
+    '/projects/:projectKey/cycles/completed',
+    ({ project, query }) => paginate(query, (window) => listCompletedCycles(project.id, window)),
+    {
+      query: completedCyclesQuery,
+      permission: ['cycles', 'read'],
+      feature: 'cycles',
+      response: { 200: CyclePageResponse, ...commonErrors },
+      detail: {
+        summary: 'List completed cycles',
+        description: "A page of a project's finished cycles, newest first.",
+      },
+    },
+  )
+
+  .post(
+    '/projects/:projectKey/cycles',
+    async ({ project, body, set }) => {
+      set.status = 201;
+      return createCycle(project.id, body);
+    },
+    {
+      body: createCycleBody,
+      permission: ['cycles', 'create'],
+      feature: 'cycles',
+      response: { 201: CycleResponse, ...commonErrors },
+      detail: {
+        summary: 'Create a cycle',
+        description:
+          'Create a cycle in a project. Its dates must not overlap another cycle of the project.',
+        ...mcpTool('create_cycle'),
+      },
+    },
+  )
+
+  .get(
+    '/cycles',
+    async ({ user, query, request }) => {
+      const ids = await readableProjectIds(requireUser(user).id, [['cycles', 'read']], {
+        mcpOnly: isMcpRequest(request.headers),
+      });
+      const bound = boundProjectId(request.headers);
+      return listCyclesInProjects(
+        ids.filter((id) => bound == null || id === bound),
+        query.status === 'planned',
+      );
+    },
+    {
+      query: listCyclesQuery,
+      response: { 200: CrossProjectCycleListResponse, ...errors(400, 401) },
+      detail: {
+        summary: 'List cycles in all projects',
+        description:
+          'List the cycles of all projects where you can read cycles, oldest first. Each cycle ' +
+          'names its project. For one project, use ' +
+          "list_cycles. In an agent run, lists only the run's project.",
+        ...requiresPermission(['cycles', 'read']),
+        ...mcpTool('list_cycles_all_projects'),
+      },
+    },
+  )
+
+  .get(
+    '/cycles/:cycleId',
+    async ({ params }) => {
+      const found = await getCycle(params.cycleId);
+      if (!found) throw new HttpError(404, 'Cycle not found');
+      return found;
+    },
+    {
+      params: cycleParams,
+      cycle: 'read',
+      response: { 200: CycleResponse, ...commonErrors },
+      detail: {
+        summary: 'Get a cycle',
+        description: 'Get a cycle by id.',
+        ...mcpTool('get_cycle'),
+      },
+    },
+  )
+
+  .patch(
+    '/cycles/:cycleId',
+    async ({ params, body }) => {
+      const updated = await updateCycle(params.cycleId, body);
+      if (!updated) throw new HttpError(404, 'Cycle not found');
+      return updated;
+    },
+    {
+      params: cycleParams,
+      body: updateCycleBody,
+      cycle: 'edit',
+      response: { 200: CycleResponse, ...commonErrors },
+      detail: {
+        summary: 'Update a cycle',
+        description: 'Update a cycle. New dates must not overlap another cycle of the project.',
+        ...mcpTool('update_cycle'),
+      },
+    },
+  )
+
+  .delete(
+    '/cycles/:cycleId',
+    async ({ params }) => {
+      await deleteCycle(params.cycleId);
+      return noContent();
+    },
+    {
+      params: cycleParams,
+      cycle: 'delete',
+      response: { 204: t.Void(), ...commonErrors },
+      detail: {
+        summary: 'Delete a cycle',
+        description: 'Delete a cycle. Its issues stay, with no cycle.',
+        ...mcpTool('delete_cycle'),
+      },
+    },
+  )
+
+  .post(
+    '/cycles/:cycleId/finish',
+    async ({ params }) => {
+      const finished = await finishCycle(params.cycleId);
+      if (!finished) throw new HttpError(404, 'Cycle not found');
+      return finished;
+    },
+    {
+      params: cycleParams,
+      cycle: 'edit',
+      response: { 200: CycleResponse, ...commonErrors },
+      detail: {
+        summary: 'Finish a cycle',
+        description:
+          'Close a running cycle before its planned end date. This is final: the cycle cannot ' +
+          'reopen, and it keeps its planned end date and its issues.',
+        ...mcpTool('finish_cycle', { destructiveHint: true }),
+      },
+    },
+  )
+
+  .post(
+    '/cycles/:cycleId/start-next',
+    async ({ params, user, projectId }) => {
+      const started = await startNextCycle(params.cycleId);
+      if (!started) throw new HttpError(404, 'Cycle not found');
+      const moved = await transferCycleIssues(
+        projectId,
+        params.cycleId,
+        started.id,
+        requireUser(user).id,
+      );
+      // Read back after the transfer, so the started cycle carries the issues it
+      // just received in its progress counts.
+      return { cycle: (await getCycle(started.id)) ?? started, moved };
+    },
+    {
+      params: cycleParams,
+      cycle: 'edit',
+      response: { 200: StartNextCycleResponse, ...commonErrors },
+      detail: {
+        summary: 'Start the next cycle today',
+        description:
+          "Finish the running cycle and start the project's next upcoming cycle today. " +
+          'Unfinished issues move to the new cycle. The new cycle keeps its planned end date.',
+        ...mcpTool('start_next_cycle', { destructiveHint: true }),
+      },
+    },
+  )
+
+  .post(
+    '/cycles/:cycleId/transfer',
+    // projectId comes from the cycle guard, which resolved it to check access.
+    async ({ params, body, user, projectId }) => {
+      const moved = await transferCycleIssues(
+        projectId,
+        params.cycleId,
+        body.targetCycleId ?? null,
+        requireUser(user).id,
+      );
+      return { moved };
+    },
+    {
+      params: cycleParams,
+      body: transferCycleBody,
+      cycle: 'edit',
+      response: { 200: TransferCycleResponse, ...commonErrors },
+      detail: {
+        summary: 'Transfer unfinished issues',
+        description:
+          "Move the cycle's issues that are not completed or canceled to another cycle, or to no " +
+          'cycle. Completed and canceled issues stay.',
+        ...mcpTool('transfer_cycle_issues'),
+      },
+    },
+  );

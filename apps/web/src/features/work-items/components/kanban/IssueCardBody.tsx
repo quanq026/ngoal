@@ -1,0 +1,279 @@
+import {
+  CalendarArrowUp,
+  CalendarClock,
+  CheckCircle2,
+  Clock,
+  GitBranch,
+  GitMerge,
+  GitPullRequest,
+  Hash,
+  Loader2,
+  RefreshCw,
+  Target,
+  Timer,
+  XCircle,
+} from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import type { BoardIssue } from '@/lib/api/endpoints/issues';
+import { type Maps } from '@/utils/project';
+import { cn } from '@/lib/utils';
+import { formatDurationShort, formatShortDate, isDueOverdue } from '@/utils/dates';
+import { formatMinutes } from '@/utils/estimate';
+import type { DisplayProperty, PropertyKey } from '@/utils/viewSettings';
+import {
+  AssigneeAvatar,
+  DateBadge,
+  DelegateAvatar,
+  LabelBadge,
+  PILL,
+  PriorityBadge,
+} from '@/features/issue/components/shared/IssueBadges';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { StateIcon } from '@/features/issue/components/shared/IssueIcons';
+import { IssueIdentifier } from '../shared/IssueIdentifier';
+import { IssueCardLinks } from './IssueCardLinks';
+import { IssueCardSubtasks } from './IssueCardSubtasks';
+
+// One board card's content. Which properties render is driven by `properties`.
+// onOpen opens an issue the card links to; the drag preview passes none.
+export function IssueCardBody({
+  issue,
+  maps,
+  properties,
+  onOpen,
+}: {
+  issue: BoardIssue;
+  maps: Maps;
+  properties: PropertyKey[];
+  onOpen?: (id: number) => void;
+}) {
+  const t = useTranslations('workItems');
+  const has = (p: DisplayProperty) => properties.includes(p);
+  const type = issue.typeId != null ? maps.typeById.get(issue.typeId) : undefined;
+  const assignee =
+    issue.assigneeUserId != null ? maps.assigneeById.get(issue.assigneeUserId) : undefined;
+  const delegate =
+    issue.delegateUserId != null ? maps.assigneeById.get(issue.delegateUserId) : undefined;
+  const initiative = issue.initiative ?? undefined;
+  const cycle = issue.cycle ?? undefined;
+  const column = maps.columnById.get(issue.columnId);
+  const dev = issue.developmentSummary;
+  const hasDevBadges = Boolean(
+    dev && (dev.openPrs > 0 || dev.mergedPrs > 0 || dev.closedPrs > 0 || dev.branches > 0),
+  );
+  const metaShown =
+    has('statusAge') ||
+    (has('dueDate') && issue.dueDate) ||
+    (has('startDate') && issue.startDate) ||
+    (has('type') && type) ||
+    (has('initiative') && initiative) ||
+    (has('cycle') && cycle) ||
+    (has('estimatePoints') && issue.estimatePoints != null) ||
+    (has('estimateTime') && issue.estimateMinutes != null) ||
+    (has('labels') && issue.labelIds.length > 0);
+  const footerShown =
+    has('created') ||
+    has('updated') ||
+    (has('assignee') && assignee) ||
+    (has('delegate') && delegate);
+
+  return (
+    <>
+      {(has('id') || (has('priority') && issue.priority)) && (
+        <div
+          className={cn('mb-2 flex items-center', has('id') ? 'justify-between' : 'justify-end')}
+        >
+          {has('id') && (
+            <IssueIdentifier
+              issue={issue}
+              className="text-xs text-muted-foreground"
+              onOpenAncestor={onOpen}
+            />
+          )}
+          {has('priority') && issue.priority && <PriorityBadge priority={issue.priority} />}
+        </div>
+      )}
+
+      <div className="mb-2 flex items-start gap-2">
+        {has('status') && column && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="mt-px inline-flex shrink-0">
+                <StateIcon stateType={column.stateType} color={column.color} className="size-3.5" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{column.name}</TooltipContent>
+          </Tooltip>
+        )}
+        <span dir="auto" className="line-clamp-2 text-sm leading-snug text-foreground">
+          {issue.title}
+        </span>
+      </div>
+
+      {metaShown && (
+        <div className="flex min-h-[22px] flex-wrap items-center gap-1">
+          {has('statusAge') && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className={PILL}>
+                  <Timer className="size-2.5" />
+                  {formatDurationShort(issue.statusSince)}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('statusSince', { date: formatShortDate(issue.statusSince) })}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {has('startDate') && issue.startDate && (
+            <DateBadge
+              icon={<CalendarArrowUp className="size-2.5" />}
+              date={issue.startDate}
+              label={t('columns.startDate')}
+            />
+          )}
+          {has('dueDate') && issue.dueDate && (
+            <DateBadge
+              icon={<CalendarClock className="size-2.5" />}
+              date={issue.dueDate}
+              label={t('columns.dueDate')}
+              overdue={isDueOverdue(issue.dueDate, column?.stateType)}
+            />
+          )}
+          {has('type') && type && (
+            <Badge variant="outline" className={PILL}>
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: type.color }}
+              />
+              {type.name}
+            </Badge>
+          )}
+          {has('initiative') && initiative && (
+            <Badge variant="outline" className={cn(PILL, 'max-w-full')}>
+              <Target className="size-2.5 shrink-0" />
+              <span className="truncate">{initiative.title}</span>
+            </Badge>
+          )}
+          {has('cycle') && cycle && (
+            <Badge variant="outline" className={cn(PILL, 'max-w-full')}>
+              <RefreshCw className="size-2.5 shrink-0" />
+              <span className="truncate">{cycle.name}</span>
+            </Badge>
+          )}
+          {has('estimatePoints') && issue.estimatePoints != null && (
+            <Badge variant="outline" className={PILL}>
+              <Hash className="size-2.5" />
+              {issue.estimatePoints}
+            </Badge>
+          )}
+          {has('estimateTime') && issue.estimateMinutes != null && (
+            <Badge variant="outline" className={PILL}>
+              <Clock className="size-2.5" />
+              {formatMinutes(issue.estimateMinutes)}
+            </Badge>
+          )}
+          {has('labels') &&
+            issue.labelIds.map((id) => {
+              const label = maps.labelById.get(id);
+              if (!label) return null;
+              return <LabelBadge key={id} color={label.color} name={label.name} />;
+            })}
+        </div>
+      )}
+
+      {footerShown && (
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="text-[11px] text-muted-foreground/70">
+            {has('created') && t('createdOn', { date: formatShortDate(issue.createdAt) })}
+            {has('created') && has('updated') && ' · '}
+            {has('updated') && t('updatedOn', { date: formatShortDate(issue.updatedAt) })}
+          </span>
+          {/* Negative spacing so a delegate and an assignee shown together
+              overlap; the ring in the card color keeps them separated. */}
+          <div className="flex items-center -space-x-1.5">
+            {has('delegate') && delegate && (
+              <DelegateAvatar
+                name={delegate.name}
+                image={delegate.image}
+                className="ring-2 ring-[var(--kanban-card)]"
+              />
+            )}
+            {has('assignee') && assignee && (
+              <AssigneeAvatar
+                name={assignee.name}
+                image={assignee.image}
+                className="ring-2 ring-[var(--kanban-card)]"
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      <IssueCardSubtasks issueId={issue.id} maps={maps} onOpen={onOpen} />
+      <IssueCardLinks links={issue.links} maps={maps} onOpen={onOpen} />
+      {hasDevBadges && dev && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          {dev.openPrs > 0 && (
+            <Badge
+              variant="outline"
+              className={cn(
+                PILL,
+                'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+              )}
+            >
+              <GitPullRequest className="size-2.5" />
+              {dev.openPrs} PR
+            </Badge>
+          )}
+          {dev.mergedPrs > 0 && (
+            <Badge
+              variant="outline"
+              className={cn(
+                PILL,
+                'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400',
+              )}
+            >
+              <GitMerge className="size-2.5" />
+              {dev.mergedPrs} Merged
+            </Badge>
+          )}
+          {dev.branches > 0 && (
+            <Badge variant="outline" className={cn(PILL, 'text-muted-foreground')}>
+              <GitBranch className="size-2.5" />
+              {dev.branches}
+            </Badge>
+          )}
+          {dev.ciStatus != null && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    PILL,
+                    dev.ciStatus === 'success'
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                      : dev.ciStatus === 'failed'
+                        ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                        : 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                  )}
+                >
+                  {dev.ciStatus === 'success' ? (
+                    <CheckCircle2 className="size-2.5" />
+                  ) : dev.ciStatus === 'failed' ? (
+                    <XCircle className="size-2.5" />
+                  ) : (
+                    <Loader2 className="size-2.5 animate-spin" />
+                  )}
+                  CI
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>CI: {dev.ciStatus}</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      )}
+    </>
+  );
+}

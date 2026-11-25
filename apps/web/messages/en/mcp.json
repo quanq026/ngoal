@@ -1,0 +1,59 @@
+{
+  "title": "MCP Server",
+  "description": "Connect AI agents to this project over the Model Context Protocol. An agent sees what its API key allows.",
+  "disabled": "Disabled",
+  "offForTeam": "MCP is off for the team {team}.",
+  "offForProject": "The team {team} has MCP on, but this project is off.",
+  "openTeamSettings": "Open the team's MCP settings",
+  "askManager": "Ask a team owner or manager to turn it on:",
+  "keyHint": "Create a key on the <link>API keys</link> page, then replace <code>{apiKey}</code> in the snippet.",
+  "endpoint": "MCP endpoint",
+  "clientTabsAria": "Client",
+  "addToFile": "Add to <code>{file}</code>",
+  "notes": {
+    "claudeCode": "Run this in your terminal.",
+    "vscode": "Needs GitHub Copilot.",
+    "claudeDesktop": "Claude Desktop connects to remote servers through the mcp-remote bridge. Needs Node.js.",
+    "other": "Any client that supports MCP over Streamable HTTP works. Point it at the endpoint. Send an Authorization: Bearer {apiKey} header."
+  },
+  "clients": {
+    "other": "Other"
+  },
+  "oauth": {
+    "configuration": "How to connect",
+    "methodTabsAria": "Connection method",
+    "method": "OAuth",
+    "personalKey": "API key",
+    "description": "Use this for any MCP client that supports OAuth, such as ChatGPT or Claude. You sign in with your {app} account. The client never receives an API key.",
+    "discovery": "OAuth discovery",
+    "steps": {
+      "add": "Add an MCP app in your client.",
+      "paste": "Paste the MCP endpoint.",
+      "choose": "Choose OAuth when the client asks how to sign in.",
+      "signIn": "Sign in to {app} and approve access."
+    },
+    "security": "OAuth uses PKCE (S256), dynamic client registration, and access tokens scoped to your {app} account.",
+    "consent": {
+      "title": "Allow {client} to access your account?",
+      "titleUnnamed": "Allow an unnamed app to access your account?",
+      "actsAs": "Once allowed, the app acts as you:",
+      "canSee": "Sees everything you can see, in all your teams",
+      "canChange": "Creates, changes and deletes anything you can",
+      "keepsAccess": "Keeps access until you disconnect it in Account › Security",
+      "account": "Account",
+      "app": "App",
+      "thisComputer": "On this computer",
+      "named": "The app named itself “{client}”. Allow only if you started this connection.",
+      "unnamed": "The app sent no name. Allow only if you started this connection.",
+      "deny": "Don't allow",
+      "allow": "Allow",
+      "allowing": "Allowing…",
+      "denying": "Sending…",
+      "expired": "This request expired after 10 minutes. Start the connection again in the app.",
+      "failed": "Your answer did not go through. Try again.",
+      "incompleteTitle": "This link is incomplete",
+      "incompleteBody": "Start the connection again in the app.",
+      "brandSubtitle": "Connect AI apps such as Claude and ChatGPT to your account."
+    }
+  }
+}

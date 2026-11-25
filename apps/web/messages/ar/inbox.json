@@ -1,0 +1,40 @@
+{
+  "title": "صندوق الوارد",
+  "empty": "لا توجد إشعارات",
+  "selectNotification": "اختر إشعارًا",
+  "backToList": "صندوق الوارد",
+  "filter": "تصفية",
+  "display": "العرض",
+  "notificationType": "نوع الإشعار",
+  "showRead": "إظهار المقروءة",
+  "showSnoozed": "إظهار المؤجّلة",
+  "markAllRead": "تعليم الكل كمقروء",
+  "deleteAllRead": "حذف كل المقروءة",
+  "deleteAllCompleted": "حذف إشعارات المهام المكتملة",
+  "deleteAllCompletedDescription": "سيؤدي هذا إلى حذف الإشعارات المطابقة للفلاتر الحالية للمهام المكتملة أو الملغاة، بما في ذلك غير المقروءة. لا يمكن التراجع عن هذا الإجراء.",
+  "types": {
+    "assigned": "مُسنَدة",
+    "mentioned": "إشارة إليك",
+    "commented": "تعليق",
+    "state_changed": "تغيّرت الحالة",
+    "reacted": "تفاعل"
+  },
+  "actions": {
+    "markRead": "تعليم كمقروء",
+    "markUnread": "تعليم كغير مقروء",
+    "snooze": "تأجيل",
+    "unsnooze": "إلغاء التأجيل",
+    "tomorrow": "غدًا",
+    "inAWeek": "بعد أسبوع",
+    "pickDate": "اختر تاريخًا…"
+  },
+  "event": {
+    "someone": "أحدهم",
+    "assigned": "أسنَد {who} المهمة إليك",
+    "mentioned": "أشار إليك {who}",
+    "commented": "علّق {who}",
+    "stateChanged": "{who} غيّر الحالة من {from} لـ {to}",
+    "stateChangedPlain": "غيّر {who} الحالة",
+    "reacted": "تفاعل {who} مع تعليقك بـ {emoji}"
+  }
+}

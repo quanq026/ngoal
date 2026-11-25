@@ -1,0 +1,59 @@
+{
+  "title": "Serveur MCP",
+  "description": "Connectez des agents IA à ce projet via le Model Context Protocol. Un agent hérite des droits de la clé d'API qu'il utilise.",
+  "disabled": "Désactivé",
+  "offForTeam": "MCP est désactivé pour l'équipe {team}.",
+  "offForProject": "L'équipe {team} a activé MCP, mais ce projet est désactivé.",
+  "openTeamSettings": "Ouvrir les paramètres MCP de l'équipe",
+  "askManager": "Demandez à un propriétaire ou à un responsable de l'équipe de l'activer :",
+  "keyHint": "Créez une clé sur la page <link>Clés d'API</link>, puis remplacez <code>{apiKey}</code> dans l'extrait.",
+  "endpoint": "Point d'accès MCP",
+  "clientTabsAria": "Client",
+  "addToFile": "À ajouter dans <code>{file}</code>",
+  "notes": {
+    "claudeCode": "Lancez ceci dans votre terminal.",
+    "vscode": "Nécessite GitHub Copilot.",
+    "claudeDesktop": "Claude Desktop se connecte aux serveurs distants via le pont mcp-remote. Nécessite Node.js.",
+    "other": "Tout client compatible MCP sur Streamable HTTP fonctionne. Faites-le pointer vers le point d'accès. Envoyez un en-tête Authorization: Bearer {apiKey}."
+  },
+  "clients": {
+    "other": "Autre"
+  },
+  "oauth": {
+    "configuration": "Comment se connecter",
+    "methodTabsAria": "Méthode de connexion",
+    "method": "OAuth",
+    "personalKey": "Clé d'API",
+    "description": "Pour tout client MCP compatible OAuth, par exemple ChatGPT ou Claude. Vous vous connectez avec votre compte {app}. Le client ne reçoit aucune clé d'API.",
+    "discovery": "Découverte OAuth",
+    "steps": {
+      "add": "Ajoutez une application MCP dans votre client.",
+      "paste": "Collez le point d'accès MCP.",
+      "choose": "Choisissez OAuth lorsque le client demande la méthode de connexion.",
+      "signIn": "Connectez-vous à {app} et approuvez l'accès."
+    },
+    "security": "OAuth utilise PKCE (S256), l'enregistrement dynamique des clients et des jetons d'accès limités à votre compte {app}.",
+    "consent": {
+      "title": "Autoriser {client} à accéder à votre compte ?",
+      "titleUnnamed": "Autoriser une application sans nom à accéder à votre compte ?",
+      "actsAs": "Une fois autorisée, l’application agit en votre nom :",
+      "canSee": "Voit tout ce que vous pouvez voir, dans toutes vos équipes",
+      "canChange": "Crée, modifie et supprime tout ce que vous pouvez",
+      "keepsAccess": "Garde l’accès jusqu’à ce que vous la déconnectiez dans Compte › Sécurité",
+      "account": "Compte",
+      "app": "Application",
+      "thisComputer": "Sur cet ordinateur",
+      "named": "L’application s’est nommée elle-même « {client} ». N’autorisez que si vous avez lancé cette connexion.",
+      "unnamed": "L’application n’a envoyé aucun nom. N’autorisez que si vous avez lancé cette connexion.",
+      "deny": "Ne pas autoriser",
+      "allow": "Autoriser",
+      "allowing": "Autorisation…",
+      "denying": "Envoi…",
+      "expired": "Cette demande a expiré au bout de 10 minutes. Relancez la connexion dans l’application.",
+      "failed": "Votre réponse n’a pas abouti. Réessayez.",
+      "incompleteTitle": "Ce lien est incomplet",
+      "incompleteBody": "Relancez la connexion dans l’application.",
+      "brandSubtitle": "Connectez à votre compte des applications d’IA comme Claude et ChatGPT."
+    }
+  }
+}

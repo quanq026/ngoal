@@ -1,0 +1,121 @@
+import { request } from '@/lib/api/core/client';
+import type { StateType } from '@/lib/api/endpoints/columns';
+
+// Inbox notifications. Each row is enriched with the issue or the document and the
+// project it points at, so the list renders without extra calls.
+export type NotificationType = 'assigned' | 'mentioned' | 'commented' | 'state_changed' | 'reacted';
+
+// The issue fields are set on an issue's notification, the document fields on a
+// document's.
+export interface Notification {
+  id: number;
+  type: NotificationType;
+  actorUserId: string | null;
+  actorName: string | null;
+  readAt: string | null;
+  snoozedUntil: string | null;
+  createdAt: string;
+  issueId: number | null;
+  issueSeq: number | null;
+  issueTitle: string | null;
+  issueStateType: StateType | null;
+  // Set while the comment it is about still exists.
+  issueCommentId: number | null;
+  documentId: number | null;
+  documentTitle: string | null;
+  documentIcon: string | null;
+  // Set when the mention is in a comment on the document.
+  documentCommentId: string | null;
+  projectId: number;
+  projectKey: string;
+  projectName: string;
+  // Only a 'state_changed' notification has them.
+  fromState: string | null;
+  toState: string | null;
+  // Only a 'reacted' notification has it.
+  reactionEmoji: string | null;
+}
+
+export interface NotificationCursor {
+  ts: string;
+  id: number;
+}
+
+export interface NotificationPage {
+  items: Notification[];
+  nextCursor: NotificationCursor | null;
+}
+
+export interface NotificationFilters {
+  types?: NotificationType[];
+  from?: string;
+  includeRead?: boolean;
+  includeSnoozed?: boolean;
+}
+
+export type NotificationDeleteScope = 'all' | 'read' | 'read-completed' | 'completed';
+
+// Inbox notifications. The list is the session user's own; projectId scopes it to
+// one project (the per-project inbox), and without it the list covers every project
+// (desktop notifications). cursor is the JSON-encoded keyset from the previous page.
+export const listNotifications = (
+  projectId?: number,
+  params: {
+    cursor?: NotificationCursor | null;
+    limit?: number;
+    filters?: NotificationFilters;
+  } = {},
+) => {
+  const q = new URLSearchParams();
+  if (projectId != null) q.set('projectId', String(projectId));
+  if (params.limit) q.set('limit', String(params.limit));
+  if (params.cursor) q.set('cursor', JSON.stringify(params.cursor));
+  const f = params.filters ?? {};
+  if (f.types?.length) q.set('types', f.types.join(','));
+  if (f.from) q.set('from', f.from);
+  if (f.includeRead === false) q.set('includeRead', 'false');
+  if (f.includeSnoozed) q.set('includeSnoozed', 'true');
+  return request<NotificationPage>(`/notifications?${q.toString()}`);
+};
+
+// Unread count for the sidebar badge, refetched when the inbox scope moves. Without a
+// project it counts every project's, for the app icon badge.
+export const getUnreadCount = (projectId?: number) =>
+  request<{ unread: number }>(
+    projectId == null ? '/notifications/unread' : `/notifications/unread?projectId=${projectId}`,
+  );
+
+export const setNotificationRead = (id: number, read: boolean) =>
+  request<void>(`/notifications/${id}/read`, { method: 'POST', body: JSON.stringify({ read }) });
+
+export const snoozeNotification = (id: number, until: string | null) =>
+  request<void>(`/notifications/${id}/snooze`, {
+    method: 'POST',
+    body: JSON.stringify({ until }),
+  });
+
+export const markAllNotificationsRead = (projectId: number, filters: NotificationFilters) =>
+  request<{ count: number }>(`/notifications/read-all`, {
+    method: 'POST',
+    body: JSON.stringify({
+      projectId,
+      ...filters,
+      includeSnoozed: filters.includeSnoozed ?? false,
+    }),
+  });
+
+export const deleteNotification = (id: number) =>
+  request<void>(`/notifications/${id}`, { method: 'DELETE' });
+
+export const deleteNotifications = (
+  scope: NotificationDeleteScope,
+  projectId: number,
+  filters: NotificationFilters,
+) => {
+  const q = new URLSearchParams({ scope, projectId: String(projectId) });
+  if (filters.types?.length) q.set('types', filters.types.join(','));
+  if (filters.from) q.set('from', filters.from);
+  if (filters.includeRead === false) q.set('includeRead', 'false');
+  q.set('includeSnoozed', String(filters.includeSnoozed ?? false));
+  return request<{ count: number }>(`/notifications?${q.toString()}`, { method: 'DELETE' });
+};

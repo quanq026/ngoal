@@ -1,0 +1,290 @@
+import { peoplePreamble, type Person } from './run-context';
+import { parseMentionHandles } from '#shared/mentions';
+import { PROJECT_DESCRIPTION_LIMIT } from '#modules/projects/model';
+import type { AgentRunTrigger } from '../../model';
+
+// Frames a triggered run into the text an agent receives: the framed user
+// prompt (framePrompt) and the system-instruction blocks about the run mode
+// (runModePreamble) and the people involved (peopleContext). The interactive test
+// chat does not use this path — it frames its own prompt in the controller.
+
+// The fields of a claimed run this module reads, as both the queue poller and the
+// external runner build them.
+export interface RunForPrompt {
+  id: number;
+  trigger: AgentRunTrigger;
+  prompt: string;
+  issueId: number | null;
+  issueIdentifier: string | null;
+  issueTitle: string | null;
+  // The issue's assignee and the person who asked: the author of the comment behind a
+  // mention run or the sender of an API task. The name they are called by and the handle
+  // they are tagged by.
+  assigneeName: string | null;
+  assigneeUsername: string | null;
+  requesterName: string | null;
+  requesterUsername: string | null;
+  agentUserId: string;
+  agentUsername: string | null;
+  // The comment the mention replies to and the ones above it, oldest first. Null for
+  // a top-level mention.
+  threadContext: string | null;
+  // The comment that mentioned the agent, so it can answer in the same thread.
+  sourceActivityId: number | null;
+  // Set on a mention in a document comment, which has no issue: the document, the text
+  // its thread is about, and the thread's first comment, which the answer goes under.
+  documentId: number | null;
+  documentTitle: string | null;
+  documentQuote: string | null;
+  threadRootId: string | null;
+}
+
+// System-instruction block describing how this run was started, so the agent knows
+// no human is present. Every triggered run is autonomous: nobody is waiting to answer
+// a clarifying question, so the agent acts on reasonable assumptions instead of asking.
+// Kept in the system prompt (not the framed user message) so it outweighs the task
+// text and applies even when a schedule's task prompt is vague.
+export function runModePreamble(run: Pick<RunForPrompt, 'trigger' | 'documentId'>): string {
+  const lines = ['## Run mode'];
+  if (run.trigger === 'schedule' || run.trigger === 'manual') {
+    lines.push(
+      'This run was started automatically on a schedule, not by a person. No human is',
+      'watching it and no one will answer questions. Complete the task with your tools,',
+      'making reasonable assumptions; never ask for clarification or wait for input.',
+    );
+  } else if (run.trigger === 'api') {
+    lines.push(
+      'This run was sent to you through the API, by a person or a program that reads the',
+      'result later. No one is watching it and no one will answer questions. Complete the',
+      'task with your tools, making reasonable assumptions; never ask for clarification.',
+    );
+  } else {
+    const subject = run.documentId != null ? 'a document' : 'an issue';
+    lines.push(
+      `You are running autonomously in response to activity on ${subject}. No human is`,
+      'waiting to answer you, so do not ask clarifying questions or wait for confirmation;',
+      'make the most reasonable assumption and carry the work out with your tools.',
+    );
+  }
+  return [...lines, '', ''].join('\n');
+}
+
+export function framePrompt(run: RunForPrompt): string {
+  if (run.trigger === 'schedule' || run.trigger === 'manual' || run.trigger === 'api') {
+    return `Carry out the following task:\n\n${run.prompt}`;
+  }
+  if (run.documentId != null) return frameDocumentMention(run);
+  if (run.trigger === 'status' || run.trigger === 'event' || run.trigger === 'field') {
+    return frameIssueTask(run);
+  }
+  const ref = run.issueIdentifier ?? `#${run.issueId}`;
+  const titled = run.issueTitle ? `${ref} "${run.issueTitle}"` : ref;
+  return run.trigger === 'delegation' ? frameDelegation(run, titled) : frameMention(run, titled);
+}
+
+function frameDelegation(run: RunForPrompt, titled: string): string {
+  return [
+    `Issue ${titled} of your project has been delegated to you. Carry it out.`,
+    'Read the issue for context, then do the work it needs with your tools. Add a',
+    'question comment only when you genuinely cannot proceed without a human answer.',
+    ...assigneeLines(run),
+    '',
+    'When you are done, add a comment to the issue with the add_comment tool',
+    `(issueId ${run.issueId}) describing what you did, and set the issue's status with`,
+    'the update_issue tool. Do not mention yourself.',
+  ].join('\n');
+}
+
+// The run's prompt already names the issue and what put the agent on it: the member field
+// it was set into, or what happened to the issue followed by the schedule's task.
+// Moving the issue on is left to that task: a status schedule is often one step of
+// several, each started by the column before it.
+function frameIssueTask(run: RunForPrompt): string {
+  return [
+    run.prompt,
+    '',
+    'Read the issue for context, then carry out the task above with your tools. Add a',
+    'question comment only when you genuinely cannot proceed without a human answer.',
+    ...assigneeLines(run),
+    '',
+    'When you are done, add a comment to the issue with the add_comment tool',
+    `(issueId ${run.issueId}) describing what you did. Do not mention yourself.`,
+  ].join('\n');
+}
+
+function assigneeLines(run: RunForPrompt): string[] {
+  if (run.assigneeUsername) {
+    return [
+      '',
+      'Whenever you comment on this issue, tag the responsible assignee',
+      `@${run.assigneeUsername} so they are notified.`,
+    ];
+  }
+  return [
+    '',
+    'This issue has no assignee. Before you comment, call get_project and read',
+    "the members' descriptions; tag the one member whose role best fits this work. If",
+    'none clearly fits, tag a project owner. Tag exactly one person.',
+  ];
+}
+
+function frameMention(run: RunForPrompt, titled: string): string {
+  // Answering with replyToId set keeps the agent's comment in the thread it was
+  // asked in, instead of at the end of the issue.
+  const args = run.sourceActivityId
+    ? `issueId ${run.issueId}, replyToId ${run.sourceActivityId}`
+    : `issueId ${run.issueId}`;
+  // A run also starts when someone answers the agent's own comment without tagging
+  // it, and telling it it was mentioned would not match what it reads.
+  const mentionsAgent =
+    !!run.agentUsername &&
+    parseMentionHandles(run.prompt).includes(run.agentUsername.toLowerCase());
+  const lead = mentionsAgent
+    ? `You were mentioned in a comment on issue ${titled} of your project.`
+    : `Someone answered your comment on issue ${titled} of your project.`;
+  const lines = [
+    lead,
+    'Work out what the comment is asking for and do it with your tools, then reply by',
+    `adding one comment to the issue with the add_comment tool (${args}) with the`,
+    'result or answer. Keep it short.',
+    'Do not mention yourself.',
+  ];
+  if (run.threadContext) {
+    lines.push(
+      '',
+      'The comment is a reply. The comments above it in the thread, oldest first:',
+      '',
+      run.threadContext,
+    );
+  }
+  lines.push('', 'The comment that mentioned you:', '', run.prompt);
+  return lines.join('\n');
+}
+
+// Only a comment in a document starts a run, never its text: one that tags the agent,
+// or a reply right after the agent's own comment.
+function frameDocumentMention(run: RunForPrompt): string {
+  const titled = `"${run.documentTitle?.trim() || 'Untitled'}" (documentId ${run.documentId})`;
+  const args = run.threadRootId
+    ? `documentId ${run.documentId}, parentId ${run.threadRootId}`
+    : `documentId ${run.documentId}`;
+  const mentionsAgent =
+    !!run.agentUsername &&
+    parseMentionHandles(run.prompt).includes(run.agentUsername.toLowerCase());
+  const lines = [
+    mentionsAgent
+      ? `You were mentioned in a comment on the document ${titled} of your project.`
+      : `Someone answered your comment on the document ${titled} of your project.`,
+    'Work out what the comment is asking for and do it with your tools, then reply by',
+    `adding one comment to its thread with the add_document_comment tool (${args})`,
+    'with the result or answer. Keep it short. Read the document with the get_document',
+    'tool when the answer depends on its text.',
+    'Do not mention yourself.',
+  ];
+  if (run.documentQuote) {
+    lines.push('', 'The thread is about this text of the document:', '', run.documentQuote);
+  }
+  if (run.threadContext) {
+    lines.push('', 'The comments above it in the thread, oldest first:', '', run.threadContext);
+  }
+  lines.push(
+    '',
+    mentionsAgent ? 'The comment that mentioned you:' : 'The answer to your comment:',
+    '',
+    run.prompt,
+  );
+  return lines.join('\n');
+}
+
+// A leading system-instruction block naming the project the agent works in. Grounds
+// every run — the test chat, the issue-triggered runs, and the ones a runner executes
+// — so the agent knows which project its tools act on and how issue keys are formed.
+export function projectPreamble(project: {
+  key: string;
+  name: string;
+  description: string;
+}): string {
+  const description = project.description.trim().slice(0, PROJECT_DESCRIPTION_LIMIT);
+  return [
+    '## Current project',
+    `You are working in the project "${project.name}" (key ${project.key}). All your`,
+    `work-item tools act on this project only, and its issues are addressed by keys`,
+    `like ${project.key}-123.`,
+    ...(description ? ['', description] : []),
+    '',
+    '',
+  ].join('\n');
+}
+
+// The projects an agent works in, for a path with no single one of its own: a chat is
+// held with the agent, not inside a project, so it names every project the agent
+// reaches and the key each is addressed by.
+export function projectsPreamble(
+  projects: { key: string; name: string; description: string }[],
+): string {
+  if (projects.length === 0) {
+    return [
+      '## Projects',
+      'You work in no project yet. Your work-item tools reach nothing until someone',
+      'attaches you to one.',
+      '',
+      '',
+    ].join('\n');
+  }
+  if (projects.length === 1) return projectPreamble(projects[0]);
+  return [
+    '## Projects',
+    'You work in these projects. A work-item tool takes the key of the one to act in,',
+    'and its issues are addressed by keys like KEY-123.',
+    '',
+    ...projects.map((p) => {
+      const description = p.description.trim().slice(0, PROJECT_DESCRIPTION_LIMIT);
+      return `- ${p.key} — "${p.name}"${description ? `: ${description}` : ''}`;
+    }),
+    '',
+    '',
+  ].join('\n');
+}
+
+// Only the chat paths carry this: a chart is drawn where the answer is read in the
+// app, while an autonomous run writes its answer into a comment, which draws none.
+export function chartPreamble(): string {
+  return [
+    '## Charts',
+    'When the person asks for a chart or a graph, build it with the create_chart tool',
+    'instead of drawing one as text. Put the spec it answers with into your reply as a',
+    'fenced block tagged chart, where the chart belongs in the text:',
+    '',
+    '```chart',
+    '{"type":"bar","x":"week","series":[{"key":"created"}],"data":[{"week":"W10","created":8}]}',
+    '```',
+    '',
+    'The block holds the spec and nothing else — the app draws it as the chart.',
+    '',
+    '',
+  ].join('\n');
+}
+
+// Only the chat paths carry this: a file is attached to a chat message, so an
+// autonomous run never meets the marker.
+export function attachmentPreamble(): string {
+  return [
+    '## Attached files',
+    'A [file: "name" (attachment id: …)] marker in the person\'s message means they attached',
+    'that file. Read it with the read_chat_attachment tool.',
+    '',
+    '',
+  ].join('\n');
+}
+
+export function peopleContext(run: RunForPrompt): string {
+  const requester: Person | null = run.requesterName
+    ? { name: run.requesterName, username: run.requesterUsername ?? null }
+    : null;
+  const assignee: Person | null = run.assigneeName
+    ? { name: run.assigneeName, username: run.assigneeUsername ?? null }
+    : null;
+  const own = run.agentUsername?.toLowerCase();
+  const mentioned = parseMentionHandles(run.prompt).filter((handle) => handle !== own);
+  return peoplePreamble({ requester, assignee, mentioned });
+}

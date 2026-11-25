@@ -1,0 +1,149 @@
+import { CornerDownRight } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import { issueColor, type Maps } from '@/utils/project';
+import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useIssueSubtaskFold, useSubtasks } from '../../context/useSubtasks';
+import { effSpan, LINK_ROW_H, MIN_TITLED_BAR_W, type TimelineColumn } from '../../utils/timeline';
+import { TimelineCells } from './TimelineCells';
+import { SubtaskProgress } from '../shared/SubtaskProgress';
+
+// The issue's subtasks as sub-rows under its timeline row: each subtask named on
+// the left behind a nesting mark and followed by its property cells, with its own
+// bar on the day track. How many are done is on the issue row itself
+// (SubtaskProgress). A subtask has no row of its own, so the bars are read-only
+// here as well — the dates are edited on the subtask itself — and a click opens it.
+export function TimelineSubtaskRows({
+  project,
+  issueId,
+  indented,
+  maps,
+  labelW,
+  columns,
+  readOnly,
+  trackWidth,
+  dayLines,
+  todayInRange,
+  todayLeft,
+  spanToRect,
+  onOpen,
+}: {
+  project: ProjectDetail;
+  issueId: number;
+  // Follows the parent row's indent, so the sub-rows stay nested under it.
+  indented: boolean;
+  maps: Maps;
+  labelW: number;
+  columns: TimelineColumn[];
+  readOnly: boolean;
+  trackWidth: number;
+  dayLines: { backgroundImage: string };
+  todayInRange: boolean;
+  todayLeft: number;
+  spanToRect: (start: Date, end: Date) => { left: number; width: number };
+  onOpen: (id: number) => void;
+}) {
+  const t = useTranslations('workItems.timeline');
+  const subtasks = useSubtasks(issueId);
+  const { open } = useIssueSubtaskFold();
+  if (!open) return null;
+
+  return (
+    <>
+      {subtasks.map((subtask, index) => {
+        const span = effSpan(subtask);
+        const rect = spanToRect(span.start, span.end);
+        const column = maps.columnById.get(subtask.columnId);
+        const done = column?.stateType === 'completed';
+        return (
+          <div
+            key={subtask.id}
+            className={cn(
+              'flex border-b hover:bg-accent/20',
+              // The last sub-row closes the block against the next issue row, so
+              // it keeps the solid separator; the ones inside it are dashed.
+              index < subtasks.length - 1 && 'border-dashed',
+            )}
+            style={{ height: LINK_ROW_H }}
+          >
+            <div
+              className="sticky start-0 z-15 flex shrink-0 overflow-hidden border-e bg-background"
+              style={{ width: labelW }}
+            >
+              <div
+                className={cn(
+                  'flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden pe-3 text-xs text-muted-foreground',
+                  indented ? 'ps-10' : 'ps-6',
+                )}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onOpen(subtask.id);
+                }}
+              >
+                {/* Marks the row as nested under the issue row above: the sub-rows
+                    are otherwise only indented, which reads as a link row. */}
+                <CornerDownRight className="size-3 shrink-0 text-muted-foreground/60 rtl:-scale-x-100" />
+                <span className="shrink-0 tabular-nums">{subtask.identifier}</span>
+                <span
+                  dir="auto"
+                  className={cn('truncate', done && 'text-muted-foreground/60 line-through')}
+                >
+                  {subtask.title}
+                </span>
+                <SubtaskProgress issueId={subtask.id} maps={maps} />
+              </div>
+              {columns.length > 0 && (
+                <TimelineCells
+                  project={project}
+                  issue={subtask}
+                  maps={maps}
+                  columns={columns}
+                  readOnly={readOnly}
+                />
+              )}
+            </div>
+            <div className="relative" style={{ width: trackWidth, ...dayLines }}>
+              {todayInRange && (
+                <div
+                  className="absolute top-0 bottom-0 z-0 w-px bg-primary/40"
+                  style={{ insetInlineStart: todayLeft }}
+                />
+              )}
+              {/* Thinner than the issue bar, so the sub-rows read as one level
+                  down without having to be greyed out. */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onOpen(subtask.id);
+                    }}
+                    className="absolute top-1/2 z-10 flex h-3.5 -translate-y-1/2 cursor-pointer items-center rounded-sm px-1.5 text-white opacity-80"
+                    style={{
+                      insetInlineStart: rect.left,
+                      width: rect.width,
+                      backgroundColor: issueColor(subtask, maps),
+                      borderInlineStart: span.inferredStart
+                        ? '2px dashed rgba(255,255,255,0.75)'
+                        : undefined,
+                    }}
+                  >
+                    {rect.width >= MIN_TITLED_BAR_W && (
+                      <span dir="auto" className="truncate text-[10px] leading-none">
+                        {subtask.title}
+                      </span>
+                    )}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {span.inferredStart ? t('inferredStart') : subtask.title}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}

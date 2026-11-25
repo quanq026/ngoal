@@ -1,0 +1,331 @@
+'use client';
+
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import type { JSONContent } from '@tiptap/core';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import Placeholder from '@tiptap/extension-placeholder';
+import { type Editor, EditorContent, useEditor } from '@tiptap/react';
+import { documentExtensions, isSafeDocumentImageSource } from '@repo/editor';
+import { common, createLowlight } from 'lowlight';
+import { useTranslations } from 'next-intl';
+import { Markdown } from 'tiptap-markdown';
+import EditorSelectionMenu from '@/components/common/editor/EditorSelectionMenu';
+import EditorTableMenu from '@/components/common/editor/EditorTableMenu';
+import EditorLinkPreview from '@/components/common/editor/EditorLinkPreview';
+import { IssueRef } from '@/components/common/editor/issueRefDecorations';
+import { refreshDecorations } from '@/components/common/editor/refreshDecorations';
+import { useIssueRefs } from '@/context/issueRefs';
+import { createLinkKeyboardHandlers } from '@/components/common/editor/linkKeyboardHandlers';
+import { openLinkOnModifierClick } from '@/components/common/editor/modifierClickLink';
+import { ResizableImage } from '@/components/common/editor/tiptap-image';
+import { pasteMarkdown } from '@/components/common/editor/pasteMarkdown';
+import { useDocumentAnchor } from '../hooks/useDocumentAnchor';
+import { DocumentBlockId } from '../extensions/documentBlockId';
+import DocumentBlockMenu from './DocumentBlockMenu';
+import DocumentSelectionActions, { type DocumentSelection } from './DocumentSelectionActions';
+import { SlashCommand } from '@/lib/tiptap-slash-command';
+import { Mention, type MentionOptions } from '@/lib/tiptap-mention';
+import { useMentionCandidates, useMentionNames } from '@/hooks/useMentionCandidates';
+import { useSession } from '@/lib/auth-client';
+
+const lowlight = createLowlight(common);
+type EditorLabels = {
+  placeholder: string;
+  codeBlockLabel: string;
+  tableLabel: string;
+  blocks?: {
+    paragraph: string;
+    headings: [string, string, string, string, string, string];
+    bulletList: string;
+    orderedList: string;
+    taskList: string;
+    quote: string;
+    divider: string;
+  };
+  image?: { label: string; onPick: () => void };
+};
+
+type EditorValue = { markdown: string; json: JSONContent };
+
+// Without `mentions` the mention node is still known, so a page that holds one parses,
+// but typing "@" offers nobody.
+export function documentEditorExtensions(labels: EditorLabels, mentions?: MentionOptions) {
+  return [
+    ...documentExtensions({
+      blockId: DocumentBlockId,
+      codeBlock: CodeBlockLowlight.configure({ lowlight }),
+      image: ResizableImage,
+      mention: mentions ? Mention.configure(mentions) : Mention,
+    }),
+    Placeholder.configure({ placeholder: labels.placeholder }),
+    SlashCommand.configure({
+      codeBlockLabel: labels.codeBlockLabel,
+      tableLabel: labels.tableLabel,
+      blocks: labels.blocks,
+      image: labels.image,
+    }),
+    Markdown.configure({ html: true, linkify: true, breaks: true }),
+  ];
+}
+
+function editorValue(editor: Editor): EditorValue {
+  return { markdown: editor.storage.markdown.getMarkdown(), json: editor.getJSON() };
+}
+
+export default function DocumentMarkdownEditor({
+  projectKey,
+  documentId,
+  onComment,
+  defaultValue,
+  defaultJson,
+  editable,
+  collaborative = false,
+  placeholder,
+  className,
+  onReady,
+  onChange,
+  onBlur,
+  onPickImage,
+  onUploadImage,
+}: {
+  projectKey?: string;
+  documentId?: number;
+  onComment?: (selection: DocumentSelection) => void;
+  defaultValue: string;
+  defaultJson: Record<string, unknown> | null;
+  editable: boolean;
+  collaborative?: boolean;
+  placeholder: string;
+  className?: string;
+  onReady: (editor: Editor | null) => void;
+  onChange: (value: EditorValue) => void;
+  onBlur: (value: EditorValue) => void;
+  onPickImage?: () => void;
+  onUploadImage?: (file: File) => Promise<{ url: string; filename: string }>;
+}) {
+  const t = useTranslations('documents.toolbar');
+  const router = useRouter();
+  const issueRefs = useIssueRefs();
+  const editorRef = useRef<Editor | null>(null);
+  const linkKeyboardHandlers = useMemo(createLinkKeyboardHandlers, []);
+  const editableRef = useRef(editable);
+  editableRef.current = editable;
+  // False while the document can be typed into but has no focus: the chip shows,
+  // and swaps for the plain identifier only once editing actually starts.
+  const focusedRef = useRef(false);
+  const [focused, setFocused] = useState(false);
+  const issueRefsRef = useRef(issueRefs);
+  issueRefsRef.current = issueRefs;
+  const openIssueRefRef = useRef(router.push);
+  openIssueRefRef.current = (href: string) => router.push(href);
+  const mentionCandidates = useMentionCandidates(
+    projectKey && documentId ? { projectKey, on: 'document', documentId, place: 'text' } : null,
+  );
+  const mentionCandidatesRef = useRef(mentionCandidates);
+  mentionCandidatesRef.current = mentionCandidates;
+  const mentionNames = useMentionNames();
+  const mentionNamesRef = useRef(mentionNames);
+  mentionNamesRef.current = mentionNames;
+  const { data: session } = useSession();
+  const selfHandle = session?.user.username ?? '';
+  const selfHandleRef = useRef(selfHandle);
+  selfHandleRef.current = selfHandle;
+
+  const editor = useEditor({
+    immediatelyRender: false,
+    editable,
+    extensions: documentEditorExtensions(
+      {
+        placeholder,
+        codeBlockLabel: t('codeBlock'),
+        tableLabel: t('table'),
+        blocks: {
+          paragraph: t('text'),
+          headings: [
+            t('heading1'),
+            t('heading2'),
+            t('heading3'),
+            t('heading4'),
+            t('heading5'),
+            t('heading6'),
+          ],
+          bulletList: t('bulletList'),
+          orderedList: t('numberedList'),
+          taskList: t('todoList'),
+          quote: t('quote'),
+          divider: t('divider'),
+        },
+        image: onPickImage ? { label: t('uploadImage'), onPick: onPickImage } : undefined,
+      },
+      {
+        items: () => mentionCandidatesRef.current,
+        self: () => selfHandleRef.current,
+        name: (handle) => mentionNamesRef.current.get(handle),
+      },
+    ).concat(
+      IssueRef.configure({
+        refs: () => issueRefsRef.current.refs,
+        open: (href) => openIssueRefRef.current(href),
+        rich: () => issueRefsRef.current.resolve && (!editableRef.current || !focusedRef.current),
+      }),
+    ),
+    content: defaultJson ?? defaultValue,
+    editorProps: {
+      handleDOMEvents: linkKeyboardHandlers,
+      handleClick(view, _pos, event) {
+        return openLinkOnModifierClick(event, view.dom);
+      },
+      attributes: {
+        role: 'textbox',
+        'aria-multiline': 'true',
+        'aria-label': t('editorLabel'),
+        class: 'md-content flex-1 focus:outline-none selection:bg-primary/15',
+      },
+      handlePaste: (_view, event) => {
+        const currentEditor = editorRef.current;
+        if (!currentEditor || !editableRef.current) return false;
+        const file = firstImageFile(event.clipboardData?.files);
+        if (file && onUploadImage) {
+          event.preventDefault();
+          void uploadAndInsertImage(
+            currentEditor,
+            file,
+            onUploadImage,
+            currentEditor.state.selection.from,
+            () => editableRef.current,
+          );
+          return true;
+        }
+        return pasteMarkdown(currentEditor, event.clipboardData);
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        const file = firstImageFile(event.dataTransfer?.files);
+        const currentEditor = editorRef.current;
+        if (moved || !file || !onUploadImage || !currentEditor || !editableRef.current)
+          return false;
+        const dropPoint = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        if (!dropPoint) return false;
+        event.preventDefault();
+        void uploadAndInsertImage(currentEditor, file, onUploadImage, dropPoint.pos, () =>
+          Boolean(editableRef.current),
+        );
+        return true;
+      },
+    },
+    onCreate: ({ editor: currentEditor }) => {
+      editorRef.current = currentEditor;
+    },
+    onUpdate: ({ editor: currentEditor }) => {
+      if (!collaborative) onChange(editorValue(currentEditor));
+    },
+    onFocus: () => {
+      focusedRef.current = true;
+      setFocused(true);
+    },
+    onBlur: ({ editor: currentEditor }) => {
+      focusedRef.current = false;
+      setFocused(false);
+      onBlur(editorValue(currentEditor));
+    },
+    onDestroy: () => {
+      editorRef.current = null;
+    },
+  });
+
+  useDocumentAnchor(editor);
+
+  useEffect(() => {
+    editorRef.current = editor;
+    onReady(editor);
+    return () => onReady(null);
+  }, [editor, onReady]);
+
+  const issueRefList = issueRefs.refs.join(',');
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => refreshDecorations(editor));
+    return () => cancelAnimationFrame(frame);
+  }, [editor, issueRefList, issueRefs.resolve, selfHandle, editable, focused]);
+
+  useLayoutEffect(() => {
+    syncDocumentEditorEditable(editor, editable);
+  }, [editable, editor]);
+
+  if (!editor) return null;
+
+  return (
+    <div className={`relative ${className ?? ''}`} data-document-editor="">
+      {editable && <DocumentBlockMenu editor={editor} />}
+      {editable && (
+        <EditorSelectionMenu editor={editor}>
+          {projectKey && documentId && onComment && (
+            <DocumentSelectionActions
+              editor={editor}
+              projectKey={projectKey}
+              documentId={documentId}
+              onComment={onComment}
+            />
+          )}
+        </EditorSelectionMenu>
+      )}
+      {editable && <EditorTableMenu editor={editor} />}
+      <EditorContent editor={editor} className="flex min-h-full flex-col" />
+      <EditorLinkPreview editor={editor} source={defaultJson ? '' : defaultValue} />
+    </div>
+  );
+}
+
+export function syncDocumentEditorEditable(editor: Editor | null, editable: boolean) {
+  // Without the second argument setEditable emits an update, which the editor
+  // reports as an edit: the draft turns dirty and autosave writes a new version of
+  // a document nobody typed in.
+  if (editor && editor.isEditable !== editable) editor.setEditable(editable, false);
+}
+
+export function insertDocumentImage(
+  editor: Editor | null,
+  editable: boolean,
+  src: string,
+  alt?: string,
+): boolean {
+  const normalizedSource = safeDocumentImageSource(src);
+  if (!normalizedSource || !editable || !editor || editor.isDestroyed || !editor.isEditable) {
+    return false;
+  }
+  return editor.chain().focus().setImage({ src: normalizedSource, alt }).run();
+}
+
+export function safeDocumentImageSource(source: string): string | null {
+  const normalized = source.trim();
+  return isSafeDocumentImageSource(normalized) ? normalized : null;
+}
+
+export function firstImageFile(files: ArrayLike<File> | null | undefined): File | null {
+  return Array.from(files ?? []).find((file) => file.type.startsWith('image/')) ?? null;
+}
+
+export async function uploadAndInsertImage(
+  editor: Editor,
+  file: File,
+  upload: (file: File) => Promise<{ url: string; filename: string }>,
+  position: number,
+  isEditable: () => boolean = () => editor.isEditable,
+): Promise<boolean> {
+  try {
+    const asset = await upload(file);
+    if (editor.isDestroyed || !editor.isEditable || !isEditable()) return false;
+    const source = safeDocumentImageSource(asset.url);
+    if (!source) return false;
+    const safePosition = Math.max(0, Math.min(position, editor.state.doc.content.size));
+    return editor
+      .chain()
+      .focus()
+      .insertContentAt(safePosition, {
+        type: 'image',
+        attrs: { src: source, alt: asset.filename },
+      })
+      .run();
+  } catch {
+    return false;
+  }
+}

@@ -1,0 +1,18 @@
+import SidebarConfigNav from '@/components/layout/SidebarConfigNav';
+import SidebarWorkNav from '@/components/layout/SidebarWorkNav';
+
+// The main sidebar body: the work navigation and Configuration group.
+export default function SidebarMainNav({
+  projectKey,
+  projectId,
+}: {
+  projectKey: string | null;
+  projectId: number | null;
+}) {
+  return (
+    <>
+      <SidebarWorkNav projectKey={projectKey} projectId={projectId} />
+      <SidebarConfigNav projectKey={projectKey} />
+    </>
+  );
+}

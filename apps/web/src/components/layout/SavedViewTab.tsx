@@ -1,0 +1,165 @@
+import { useState } from 'react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Copy, EyeOff, MoreHorizontal, Pencil, Star, Trash2, Users } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import type { View } from '@/lib/api/endpoints/views';
+import { usePublishView, useSetViewFavorite } from '@/services/views.service';
+import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import ViewTabChrome from '@/components/layout/ViewTabChrome';
+import ViewTabLabel from '@/components/layout/ViewTabLabel';
+
+// A saved view tab. Sortable (drag to arrange one's own tab row); when active it shows a
+// "…" menu with Favorite / Duplicate / Hide / Add to the project / Edit / Delete.
+export default function SavedViewTab({
+  view,
+  projectKey,
+  active,
+  canEdit,
+  canDelete,
+  canPublish,
+  canDuplicate,
+  onSelect,
+  onEdit,
+  onDelete,
+  onDuplicate,
+  onHide,
+}: {
+  view: View;
+  projectKey: string;
+  active: boolean;
+  canEdit: boolean;
+  canShare?: boolean;
+  canDelete: boolean;
+  canPublish: boolean;
+  canDuplicate: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+  onHide: () => void;
+}) {
+  const t = useTranslations('views');
+  const tCommon = useTranslations('common');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const setFavorite = useSetViewFavorite(projectKey);
+  const publish = usePublishView(projectKey);
+  // The tab row is the caller's own, so anyone who sees the views arranges it.
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: view.id,
+  });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <ViewTabChrome
+      active={active}
+      own={view.isPrivate}
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={cn('cursor-grab', isDragging && 'opacity-40')}
+    >
+      <button type="button" onClick={onSelect} className="flex items-center gap-1.5 py-1 pr-1 pl-2">
+        <ViewTabLabel view={view} />
+      </button>
+      {/* Favoriting is personal and needs no permission, so an active tab always has a menu. */}
+      {active ? (
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              title={t('options')}
+              className="mr-1.5 rounded p-0.5 hover:bg-accent-foreground/10"
+            >
+              <MoreHorizontal className="size-3.5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-60 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                setFavorite.mutate({ id: view.id, favorite: !view.favorite });
+              }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-accent"
+            >
+              <Star
+                className={cn('size-3.5 shrink-0', view.favorite && 'fill-current text-amber-500')}
+              />
+              {view.favorite ? t('unfavorite') : t('favorite')}
+            </button>
+            {canDuplicate && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDuplicate();
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1 text-start text-sm hover:bg-accent"
+              >
+                <Copy className="size-3.5 shrink-0" /> {t('duplicate')}
+              </button>
+            )}
+            {/* One's own private view that is not wanted is deleted, not hidden. */}
+            {!view.isPrivate && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onHide();
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1 text-start text-sm hover:bg-accent"
+              >
+                <EyeOff className="size-3.5 shrink-0" /> {t('hide')}
+              </button>
+            )}
+            {canPublish && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  publish.mutate(view.id);
+                }}
+                className="flex w-full items-start gap-2 rounded px-2 py-1 text-start text-sm hover:bg-accent"
+              >
+                <Users className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  {t('publish')}
+                  <span className="block text-xs text-muted-foreground">{t('publishHint')}</span>
+                </span>
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onEdit();
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-accent"
+              >
+                <Pencil className="size-3.5 shrink-0" /> {tCommon('edit')}
+              </button>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDelete();
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="size-3.5 shrink-0" /> {tCommon('delete')}
+              </button>
+            )}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <span className="w-1.5" />
+      )}
+    </ViewTabChrome>
+  );
+}

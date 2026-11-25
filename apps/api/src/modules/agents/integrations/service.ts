@@ -1,0 +1,334 @@
+import { db, integrationCredential } from '@repo/db';
+import { and, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import {
+  coerceConfig,
+  redactConfig,
+  ToolConfigError,
+  type CredentialCheck,
+  type ToolConfig,
+  type ConfigField,
+} from '@repo/agent-tools';
+import { iso, HttpError, likePattern } from '#shared/lib';
+import { encryptSecret, decryptSecret } from '@repo/crypto';
+import {
+  credentialSchemaFor,
+  findIntegration,
+  integrationCatalog,
+  type UnifiedIntegration,
+} from './catalog';
+import { checkCredential } from './credential-check';
+
+// Data access for integration credentials. They belong to the team, so a
+// project-scoped caller resolves its team id first. The full credential object is
+// encrypted at rest (AES-256-GCM) as one JSON blob; `redacted` holds the same object
+// with secret fields masked, in plaintext, for a masked display. The plaintext
+// credential is only read by the runtime through getCredentialSecret, never returned
+// over HTTP.
+
+export interface CredentialRow {
+  id: number;
+  teamId: number;
+  integrationKey: string;
+  label: string | null;
+  redacted: Record<string, unknown>;
+  createdAt: string;
+}
+
+const dtoColumns = {
+  id: integrationCredential.id,
+  teamId: integrationCredential.teamId,
+  integrationKey: integrationCredential.integrationKey,
+  label: integrationCredential.label,
+  redacted: integrationCredential.redacted,
+  createdAt: integrationCredential.createdAt,
+};
+
+function mapRow(row: {
+  id: number;
+  teamId: number;
+  integrationKey: string;
+  label: string | null;
+  redacted: unknown;
+  createdAt: Date;
+}): CredentialRow {
+  return {
+    id: row.id,
+    teamId: row.teamId,
+    integrationKey: row.integrationKey,
+    label: row.label,
+    redacted:
+      row.redacted && typeof row.redacted === 'object'
+        ? (row.redacted as Record<string, unknown>)
+        : {},
+    createdAt: iso(row.createdAt),
+  };
+}
+
+// Validates a submitted credential against a schema, mapping the package's validation
+// error to a 400.
+function coerce(fields: ConfigField[], input: unknown): ToolConfig {
+  try {
+    return coerceConfig(fields, input);
+  } catch (err) {
+    if (err instanceof ToolConfigError) throw new HttpError(400, err.message);
+    throw err;
+  }
+}
+
+// Integration names and kinds are stored in the catalog, not in the table, so a filter
+// on them resolves to integration keys.
+function integrationKeys(match: (integration: UnifiedIntegration) => boolean): string[] {
+  return integrationCatalog()
+    .filter(match)
+    .map((integration) => integration.key);
+}
+
+// One page of the team's credentials, by integration key, with how many match in all.
+// The search also matches the stored key, so a credential of an integration the
+// catalog no longer carries is still found.
+export async function listCredentials(
+  teamId: number,
+  window: { limit: number; offset: number },
+  filter: { search?: string; kinds?: string[] },
+): Promise<{ items: CredentialRow[]; total: number }> {
+  const { kinds } = filter;
+  const term = filter.search?.trim().toLowerCase();
+  const where = and(
+    eq(integrationCredential.teamId, teamId),
+    kinds
+      ? inArray(
+          integrationCredential.integrationKey,
+          integrationKeys((i) => kinds.includes(i.kind)),
+        )
+      : undefined,
+    term
+      ? or(
+          inArray(
+            integrationCredential.integrationKey,
+            integrationKeys((i) => i.label.toLowerCase().includes(term)),
+          ),
+          ilike(integrationCredential.integrationKey, likePattern(term)),
+          ilike(integrationCredential.label, likePattern(term)),
+        )
+      : undefined,
+  );
+  const [rows, counted] = await Promise.all([
+    db
+      .select(dtoColumns)
+      .from(integrationCredential)
+      .where(where)
+      .orderBy(integrationCredential.integrationKey)
+      .limit(window.limit)
+      .offset(window.offset),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(integrationCredential)
+      .where(where),
+  ]);
+  return { items: rows.map(mapRow), total: counted[0]?.count ?? 0 };
+}
+
+// Every credential of the team, by integration key. What the options route narrows
+// into picker entries.
+export async function listAllCredentials(teamId: number): Promise<CredentialRow[]> {
+  const rows = await db
+    .select(dtoColumns)
+    .from(integrationCredential)
+    .where(eq(integrationCredential.teamId, teamId))
+    .orderBy(integrationCredential.integrationKey);
+  return rows.map(mapRow);
+}
+
+export async function getCredentialById(id: number, teamId: number): Promise<CredentialRow | null> {
+  const rows = await db
+    .select(dtoColumns)
+    .from(integrationCredential)
+    .where(and(eq(integrationCredential.id, id), eq(integrationCredential.teamId, teamId)));
+  return rows[0] ? mapRow(rows[0]) : null;
+}
+
+async function decrypt(id: number, teamId: number): Promise<ToolConfig | null> {
+  const rows = await db
+    .select({
+      ciphertext: integrationCredential.ciphertext,
+      iv: integrationCredential.iv,
+      authTag: integrationCredential.authTag,
+    })
+    .from(integrationCredential)
+    .where(and(eq(integrationCredential.id, id), eq(integrationCredential.teamId, teamId)));
+  const row = rows[0];
+  if (!row) return null;
+  return JSON.parse(decryptSecret(row)) as ToolConfig;
+}
+
+export interface NewCredentialInput {
+  integrationKey: string;
+  label?: string | null;
+  credential: Record<string, unknown>;
+}
+
+// A credential its service refuses is not stored. Any other answer, none included, lets
+// it through, so an outage of the service never blocks saving.
+async function assertAccepted(integrationKey: string, config: ToolConfig): Promise<void> {
+  if ((await checkCredential(integrationKey, config)) !== 'rejected') return;
+  const label = findIntegration(integrationKey)?.label ?? integrationKey;
+  throw new HttpError(400, `${label} rejected this credential. Check it and try again.`);
+}
+
+// A new credential's schema and its coerced fields. An unknown integration, or one that
+// needs no credential, is refused.
+function newConfig(
+  integrationKey: string,
+  credential: Record<string, unknown>,
+): { schema: ConfigField[]; config: ToolConfig } {
+  const schema = credentialSchemaFor(integrationKey);
+  if (!schema) throw new HttpError(400, `Unknown integration: ${integrationKey}`);
+  if (schema.length === 0) {
+    throw new HttpError(400, `The ${integrationKey} integration needs no credential.`);
+  }
+  return { schema, config: coerce(schema, credential) };
+}
+
+export async function createCredential(
+  teamId: number,
+  input: NewCredentialInput,
+): Promise<CredentialRow> {
+  const { schema, config } = newConfig(input.integrationKey, input.credential);
+  await assertAccepted(input.integrationKey, config);
+  const enc = encryptSecret(JSON.stringify(config));
+  const [row] = await db
+    .insert(integrationCredential)
+    .values({
+      teamId,
+      integrationKey: input.integrationKey,
+      label: input.label ?? null,
+      ciphertext: enc.ciphertext,
+      iv: enc.iv,
+      authTag: enc.authTag,
+      redacted: redactConfig(schema, config),
+    })
+    .returning(dtoColumns);
+  return mapRow(row);
+}
+
+export interface CredentialPatch {
+  label?: string | null;
+  // Only the fields being changed. Secret fields left out keep their stored value.
+  credential?: Record<string, unknown>;
+}
+
+// The tools send a credential's secrets to the address in its url fields. A new address
+// has to come with the secrets, or someone who may edit them but never read them could
+// send them to a host of their own.
+function assertSecretsResent(
+  fields: ConfigField[],
+  current: ToolConfig,
+  patch: Record<string, unknown>,
+): void {
+  const moved = fields.some(
+    (f) =>
+      f.type === 'url' &&
+      f.key in patch &&
+      String(patch[f.key] ?? '') !== String(current[f.key] ?? ''),
+  );
+  if (!moved) return;
+  const missing = fields.filter((f) => f.type === 'secret' && f.key in current && !patch[f.key]);
+  if (missing.length > 0) {
+    throw new HttpError(
+      400,
+      `Enter ${missing.map((f) => f.label).join(', ')} again to change the address`,
+    );
+  }
+}
+
+// The stored credential with the changed fields over it, so unchanged secrets (left out
+// by the form) are kept, re-validated as a whole.
+async function mergedConfig(
+  id: number,
+  teamId: number,
+  schema: ConfigField[],
+  patch: Record<string, unknown>,
+): Promise<ToolConfig> {
+  const current = (await decrypt(id, teamId)) ?? {};
+  assertSecretsResent(schema, current, patch);
+  return coerce(schema, { ...current, ...patch });
+}
+
+export async function updateCredential(
+  id: number,
+  teamId: number,
+  patch: CredentialPatch,
+): Promise<CredentialRow | null> {
+  const existing = await getCredentialById(id, teamId);
+  if (!existing) return null;
+  const schema = credentialSchemaFor(existing.integrationKey);
+  if (!schema) throw new HttpError(400, `Unknown integration: ${existing.integrationKey}`);
+
+  const set: Partial<typeof integrationCredential.$inferInsert> = {};
+  if (patch.label !== undefined) set.label = patch.label;
+
+  if (patch.credential !== undefined) {
+    const merged = await mergedConfig(id, teamId, schema, patch.credential);
+    await assertAccepted(existing.integrationKey, merged);
+    const enc = encryptSecret(JSON.stringify(merged));
+    set.ciphertext = enc.ciphertext;
+    set.iv = enc.iv;
+    set.authTag = enc.authTag;
+    set.redacted = redactConfig(schema, merged);
+  }
+
+  if (Object.keys(set).length > 0) {
+    await db
+      .update(integrationCredential)
+      .set(set)
+      .where(and(eq(integrationCredential.id, id), eq(integrationCredential.teamId, teamId)));
+  }
+  return getCredentialById(id, teamId);
+}
+
+// Asks the service whether it would accept a new credential, without storing it.
+export async function checkNewCredential(input: {
+  integrationKey: string;
+  credential: Record<string, unknown>;
+}): Promise<CredentialCheck> {
+  const { config } = newConfig(input.integrationKey, input.credential);
+  return checkCredential(input.integrationKey, config);
+}
+
+// Asks the service about a stored credential with the changed fields over it, without
+// storing them. Null when the team holds no such credential.
+export async function checkStoredCredential(
+  id: number,
+  teamId: number,
+  credential: Record<string, unknown>,
+): Promise<CredentialCheck | null> {
+  const existing = await getCredentialById(id, teamId);
+  if (!existing) return null;
+  const schema = credentialSchemaFor(existing.integrationKey);
+  if (!schema) throw new HttpError(400, `Unknown integration: ${existing.integrationKey}`);
+  return checkCredential(
+    existing.integrationKey,
+    await mergedConfig(id, teamId, schema, credential),
+  );
+}
+
+export async function deleteCredential(id: number, teamId: number): Promise<boolean> {
+  const existing = await getCredentialById(id, teamId);
+  if (!existing) return false;
+  await db
+    .delete(integrationCredential)
+    .where(and(eq(integrationCredential.id, id), eq(integrationCredential.teamId, teamId)));
+  return true;
+}
+
+// The decrypted credential for the runtime: its integration key and config. Not
+// exposed over HTTP. Returns null when the credential does not exist in the team.
+export async function getCredentialSecret(
+  id: number,
+  teamId: number,
+): Promise<{ integrationKey: string; config: ToolConfig } | null> {
+  const existing = await getCredentialById(id, teamId);
+  if (!existing) return null;
+  const config = (await decrypt(id, teamId)) ?? {};
+  return { integrationKey: existing.integrationKey, config };
+}

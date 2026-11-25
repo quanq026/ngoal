@@ -1,0 +1,1770 @@
+import { Elysia, t, type DocumentDecoration } from 'elysia';
+import { listIssueAgentRuns, getIssueAgentRunTrace } from './agent-runs';
+import { mcpTool } from '#mcp/generate';
+import { noContent } from '#shared/http';
+import {
+  guards,
+  entityGuard,
+  assertMcpAllowed,
+  assertProjectReachable,
+  requiresPermission,
+} from '#shared/guards';
+import { authContext } from '#shared/auth-context';
+import {
+  assertPermission,
+  assertProjectOwner,
+  assertWritable,
+  readableProjectIds,
+  requireUser,
+} from '#shared/access';
+import { boundProjectId, isMcpRequest } from '#shared/mcp-request';
+import { getProjectById } from '#modules/projects/service';
+import { assertReadsRuns } from '#modules/agents/queue/service';
+import { HttpError, instantParam } from '#shared/lib';
+import { accessErrors, commonErrors, errors } from '#shared/responses';
+import { deleteObject } from '@repo/storage';
+import {
+  createIssue,
+  searchIssues,
+  searchIssuesInProjects,
+  listIssuesInProjects,
+  ISSUE_STATE_TYPES,
+  type IssueStateType,
+  listIssues,
+  listArchivedIssues,
+  getIssue,
+  getIssueBySequence,
+  getIssueProjectId,
+  updateIssue,
+  deleteIssue,
+  archiveIssue,
+  restoreIssue,
+  bulkUpdateIssues,
+  bulkAddLabels,
+  bulkArchiveIssues,
+  bulkDeleteIssues,
+  setIssueLabels,
+  setIssueFieldValue,
+  getIssueFieldValues,
+} from './service';
+import {
+  listFeed,
+  countFeed,
+  listFeedRange,
+  listGroupedFeed,
+  createComment,
+  getCommentRef,
+  updateComment,
+  deleteComment,
+  recordActivity,
+  textSide,
+  type FeedCursor,
+} from './activity';
+import { addReaction, removeReaction } from './reactions';
+import { listStatusTimeline } from './status-history';
+import { addIssueLink, attachBoardLinks, listIssueLinks, removeIssueLink } from './links';
+import {
+  attachSubtaskCounts,
+  disposeSubtasksOf,
+  getParentRef,
+  listAncestors,
+  listSubtasks,
+  listSubtree,
+  restoreSubtasksOf,
+  type SubtaskDisposition,
+  type SubtaskMode,
+} from './subtasks';
+import { isEligibleIssueWatcher, listIssueWatchers, setIssueWatching } from './watchers';
+import {
+  createWorklog,
+  deleteWorklog,
+  getWorklogRef,
+  listWorklogs,
+  updateWorklog,
+} from './worklogs';
+import { listIssueCycles } from './cycle-history';
+import { moveIssue } from './move';
+import {
+  attachDevelopmentSummaries,
+  createAndLinkBranch,
+  createAndLinkPullRequest,
+  linkExistingPullRequest,
+  listLinkablePullRequests,
+  listIssueDevelopmentLinks,
+  removeIssueDevelopmentLink,
+} from '#modules/git/development';
+import { listDevelopmentRepositories, listManagedBranches } from '#modules/git/connections-service';
+import { DevelopmentLinkResponse } from '#modules/git/model';
+import {
+  createChecklist,
+  createChecklistItem,
+  createChecklistItems,
+  deleteChecklist,
+  deleteChecklistItem,
+  getChecklistIssueId,
+  getChecklistItemIssueId,
+  listChecklists,
+  renameChecklist,
+  reorderChecklistItems,
+  reorderChecklists,
+  updateChecklistItem,
+} from './checklists';
+
+import {
+  issueParams,
+  issueAgentRunsQuery,
+  issueAgentRunParams,
+  IssueAgentRunPageResponse,
+  IssueAgentRunTraceResponse,
+  issueAgentTraceQuery,
+  issueDevelopmentLinkParams,
+  issueDevelopmentRepositoryParams,
+  issueDevelopmentListQuery,
+  linkIssueDevelopmentBody,
+  createIssuePullRequestBody,
+  createIssueBranchBody,
+  CreatedBranchResponse,
+  DevelopmentRepositoryResponse,
+  LinkablePullRequestPageResponse,
+  DevelopmentBranchPageResponse,
+  IssueResponse,
+  IssueLinkResponse,
+  IssueWatcherResponse,
+  issueWatcherParams,
+  ChecklistItemResponse,
+  ChecklistResponse,
+  OrderedIdsSchema,
+  checklistParams,
+  checklistItemParams,
+  worklogParams,
+  WorklogResponse,
+  createWorklogBody,
+  updateWorklogBody,
+  IssueWithFieldsResponse,
+  IssueSearchHitResponse,
+  CrossProjectIssueHitResponse,
+  FeedItemResponse,
+  FeedPageResponse,
+  GroupedFeedPageResponse,
+  feedPageQuery,
+  FeedCountsResponse,
+  TimelineSegmentResponse,
+  IssueCycleResponse,
+  projectKeyParams,
+  createIssueBody,
+  bulkUpdateIssuesBody,
+  bulkAddLabelsBody,
+  bulkArchiveIssuesBody,
+  bulkDeleteIssuesBody,
+  searchIssuesQuery,
+  searchAllIssuesQuery,
+  listIssuesQuery,
+  listAllIssuesQuery,
+  issueSequenceParams,
+  updateIssueBody,
+  subtaskDispositionQuery,
+  setIssueFieldValueBody,
+  issueFieldParams,
+  addIssueLinkBody,
+  issueLinkParams,
+  checklistTitleBody,
+  createChecklistItemBody,
+  createChecklistItemsBody,
+  updateChecklistItemBody,
+  feedRangeQuery,
+  createCommentBody,
+  updateCommentBody,
+  commentParams,
+  addReactionBody,
+  reactionParams,
+  CommentReactionResponse,
+  archiveIssueBody,
+  moveIssueBody,
+  BulkUpdatedResponse,
+  BulkArchivedResponse,
+  BulkDeletedResponse,
+  BoardResponse,
+  SubtreeIssueResponse,
+  subtreeQuery,
+  WatchStateResponse,
+} from './model';
+
+// The subtask choice a delete or archive request carries, or undefined when it
+// carries none.
+function disposition(
+  input?: { subtasks?: SubtaskMode; newParentId?: number } | null,
+): SubtaskDisposition | undefined {
+  if (!input?.subtasks) return undefined;
+  return { mode: input.subtasks, newParentId: input.newParentId };
+}
+
+// Removes the deleted issues' attachment objects. A failed object delete only
+// orphans bytes, so it does not fail the request.
+async function purgeObjects(attachments: { s3Key: string }[]): Promise<void> {
+  await Promise.all(
+    attachments.map((a) =>
+      deleteObject(a.s3Key).catch((err) => {
+        console.error(
+          `[planner] failed to delete object ${a.s3Key}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }),
+    ),
+  );
+}
+
+// The cursor travels as JSON in the query string. A malformed one gives null, which
+// serves the first page.
+function feedCursor(raw?: string): FeedCursor | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as FeedCursor;
+  } catch {
+    return null;
+  }
+}
+
+export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues'] } })
+  .use(authContext)
+  .use(guards)
+  // Guards for routes that address an entity by its own id (no :projectKey in the
+  // path). Set `workItem` / `checklist` / `checklistItem` to the action in the
+  // route options, `worklog` / `comment` to true. A checklist, its items, a time
+  // entry and a comment belong to the issue that carries them, so they all resolve
+  // to the same work_items permission.
+  .macro({
+    // An issue's runs are read as the run list reads them: reading the issue is not needed.
+    issueAgentRuns(_enabled: boolean) {
+      return {
+        detail: requiresPermission(['ai_agents', 'read']) as DocumentDecoration,
+        async resolve({ params, user, request }) {
+          const projectId = await getIssueProjectId(
+            Number((params as { issueId: string }).issueId),
+          );
+          if (projectId == null) throw new HttpError(404, 'Issue not found');
+          await assertReadsRuns(projectId, requireUser(user));
+          await assertMcpAllowed(projectId, request.headers);
+          return { projectId };
+        },
+      };
+    },
+    workItem: entityGuard('work_items', 'Issue not found', (p) =>
+      getIssueProjectId(Number(p.issueId)),
+    ),
+    // The checklist and stats routes carry the section they belong to, so turning it
+    // off in the project's settings closes them.
+    issueChecklist: entityGuard(
+      'work_items',
+      'Issue not found',
+      (p) => getIssueProjectId(Number(p.issueId)),
+      'checklists',
+    ),
+    issueStats: entityGuard(
+      'work_items',
+      'Issue not found',
+      (p) => getIssueProjectId(Number(p.issueId)),
+      'issueStats',
+    ),
+    developmentRepositories: entityGuard('repositories', 'Issue not found', (p) =>
+      getIssueProjectId(Number(p.issueId)),
+    ),
+    checklist: entityGuard(
+      'work_items',
+      'Checklist not found',
+      async (p) => {
+        const issueId = await getChecklistIssueId(Number(p.checklistId));
+        return issueId == null ? null : getIssueProjectId(issueId);
+      },
+      'checklists',
+    ),
+    checklistItem: entityGuard(
+      'work_items',
+      'Checklist item not found',
+      async (p) => {
+        const issueId = await getChecklistItemIssueId(Number(p.itemId));
+        return issueId == null ? null : getIssueProjectId(issueId);
+      },
+      'checklists',
+    ),
+    // A time entry belongs to the member who logged it: they change and delete
+    // their own with the work_items edit this asserts. Someone else's is a record
+    // of what that member did, so only a project owner may touch it — no
+    // permission on the matrix grants it. Hence not an ordinary entityGuard: the
+    // rule depends on the row, not on the route.
+    worklog(_enabled: boolean) {
+      return {
+        async resolve({ params, user, request }) {
+          const entry = await getWorklogRef(Number((params as { worklogId: string }).worklogId));
+          if (!entry) throw new HttpError(404, 'Time entry not found');
+          await assertPermission(entry.projectId, user, 'work_items', 'edit');
+          if (entry.userId !== requireUser(user).id)
+            await assertProjectOwner(entry.projectId, user);
+          await assertProjectReachable(entry.projectId, request);
+          return { projectId: entry.projectId };
+        },
+      };
+    },
+    // The project an issue moves to: the caller must be allowed to create issues there,
+    // on top of the delete the issue's own project asks for through workItem.
+    moveTarget(_enabled: boolean) {
+      return {
+        async resolve({ body, user, request }) {
+          const target = await getProjectById((body as { projectId: number }).projectId);
+          if (!target) throw new HttpError(404, 'Project not found');
+          await assertPermission(target.id, user, 'work_items', 'create');
+          await assertMcpAllowed(target.id, request.headers);
+          assertWritable(target, request.method);
+          return { target };
+        },
+      };
+    },
+    // A comment belongs to the member who wrote it, the same rule the time entry
+    // above carries: the author changes or deletes their own with the work_items
+    // edit this asserts; another member's only a project owner can touch.
+    comment(_enabled: boolean) {
+      return {
+        async resolve({ params, user, request }) {
+          const entry = await getCommentRef(Number((params as { commentId: string }).commentId));
+          if (!entry) throw new HttpError(404, 'Comment not found');
+          await assertPermission(entry.projectId, user, 'work_items', 'edit');
+          if (entry.actorUserId !== requireUser(user).id)
+            await assertProjectOwner(entry.projectId, user);
+          await assertProjectReachable(entry.projectId, request);
+          return { projectId: entry.projectId };
+        },
+      };
+    },
+    // Reacting to a comment asks for what writing one asks for, whoever wrote it.
+    commentReaction: entityGuard('work_items', 'Comment not found', async (p) => {
+      const entry = await getCommentRef(Number(p.commentId));
+      return entry?.projectId ?? null;
+    }),
+  })
+  .post(
+    '/projects/:projectKey/issues',
+    async ({ project, body, user, set }) => {
+      set.status = 201;
+      return createIssue(project, body, requireUser(user).id);
+    },
+    {
+      body: createIssueBody,
+      permission: ['work_items', 'create'],
+      response: { 201: IssueResponse, ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Create an issue',
+        description:
+          'Create an issue in a project. Returns 409 (code wip_limit_exceeded) if the target ' +
+          'column is at a hard WIP limit.',
+        ...mcpTool('create_issue'),
+      },
+    },
+  )
+
+  // --- Bulk actions (board multi-select) -----------------------------------------
+  // Project-scoped, so the `permission` guard resolves the project and asserts access
+  // once. The service filters the ids to this project, so a bulk action can never
+  // touch another project's issues.
+
+  // Applies one patch to every listed issue.
+  .patch(
+    '/projects/:projectKey/issues/bulk',
+    async ({ project, body, user }) => {
+      const updated = await bulkUpdateIssues(
+        project.id,
+        body.ids,
+        body.patch,
+        requireUser(user).id,
+      );
+      return { updated };
+    },
+    {
+      params: projectKeyParams,
+      body: bulkUpdateIssuesBody,
+      permission: ['work_items', 'edit'],
+      response: { 200: BulkUpdatedResponse, ...commonErrors, ...errors(409) },
+      detail: { summary: 'Bulk update issues' },
+    },
+  )
+
+  // Adds labels to every listed issue, keeping their existing labels.
+  .post(
+    '/projects/:projectKey/issues/bulk/labels',
+    async ({ project, body, user }) => {
+      const updated = await bulkAddLabels(project.id, body.ids, body.add, requireUser(user).id);
+      return { updated };
+    },
+    {
+      params: projectKeyParams,
+      body: bulkAddLabelsBody,
+      permission: ['work_items', 'edit'],
+      response: { 200: BulkUpdatedResponse, ...commonErrors },
+      detail: { summary: 'Bulk add labels to issues' },
+    },
+  )
+
+  // Archives every listed issue.
+  .post(
+    '/projects/:projectKey/issues/bulk/archive',
+    async ({ project, body, user }) => {
+      const actorUserId = requireUser(user).id;
+      await disposeSubtasksOf(project.id, body.ids, 'archive', disposition(body), actorUserId);
+      const archived = await bulkArchiveIssues(project.id, body.ids, actorUserId);
+      return { archived };
+    },
+    {
+      params: projectKeyParams,
+      body: bulkArchiveIssuesBody,
+      permission: ['work_items', 'edit'],
+      response: { 200: BulkArchivedResponse, ...commonErrors, ...errors(409) },
+      detail: { summary: 'Bulk archive issues' },
+    },
+  )
+
+  // Deletes every listed issue and removes their attachment objects.
+  .post(
+    '/projects/:projectKey/issues/bulk/delete',
+    async ({ project, body, user }) => {
+      const fromSubtasks = await disposeSubtasksOf(
+        project.id,
+        body.ids,
+        'delete',
+        disposition(body),
+        requireUser(user).id,
+      );
+      const { deleted, attachments } = await bulkDeleteIssues(
+        project.id,
+        body.ids,
+        requireUser(user).id,
+      );
+      await purgeObjects([...fromSubtasks, ...attachments]);
+      return { deleted };
+    },
+    {
+      params: projectKeyParams,
+      body: bulkDeleteIssuesBody,
+      permission: ['work_items', 'delete'],
+      response: { 200: BulkDeletedResponse, ...commonErrors, ...errors(409) },
+      detail: { summary: 'Bulk delete issues' },
+    },
+  )
+
+  // Text search: matches q (case-insensitive substring) against the title,
+  // description, issue number, and custom field text. Always searches every issue,
+  // archived included, and each hit carries an 'archived' flag. Filtering by fields is
+  // a separate concern (see list_issues). This route comes before
+  // /issues/:sequenceNumber so the static "search" segment wins over the numeric param.
+  .get(
+    '/projects/:projectKey/issues/search',
+    async ({ project, query }) => {
+      const limit = Math.min(Math.max(query.limit ?? 50, 1), 500);
+      return searchIssues(project, { query: query.q, limit }, { includeArchived: true });
+    },
+    {
+      params: projectKeyParams,
+      query: searchIssuesQuery,
+      permission: ['work_items', 'read'],
+      response: { 200: t.Array(IssueSearchHitResponse), ...commonErrors },
+      detail: {
+        summary: 'Search issues by text',
+        description: "Search a project's issues by text.",
+        ...mcpTool('search_issues'),
+      },
+    },
+  )
+
+  // Filtered list: no text query, only exact field filters. Every filter is optional,
+  // and every filter the caller sets must match. With no filters this lists the
+  // project's active issues. It leaves out archived issues unless includeArchived is
+  // 'true'.
+  .get(
+    '/projects/:projectKey/issues',
+    async ({ project, query }) => {
+      const labelIds = query.labelIds
+        ? query.labelIds.split(',').map(Number).filter(Number.isFinite)
+        : undefined;
+      // A filter is "not set" when its value is empty. An LLM calling this as a tool
+      // tends to fill every optional field with a placeholder (0 for a numeric id,
+      // "" for a string) rather than omitting it; those must mean "any", not a filter
+      // on id 0 / the empty string. Serial ids are always positive, so a non-positive
+      // id is never a real filter. This keeps the list robust to any model.
+      const posId = (v: number | undefined) => (v && v > 0 ? v : undefined);
+      const str = (v: string | undefined) => (v ? v : undefined);
+      const limit = Math.min(Math.max(query.limit ?? 50, 1), 500);
+      return searchIssues(
+        project,
+        {
+          columnId: posId(query.columnId),
+          typeId: posId(query.typeId),
+          initiativeId: posId(query.initiativeId),
+          cycleId: posId(query.cycleId),
+          parentId: posId(query.parentId),
+          assigneeUserId: str(query.assigneeUserId),
+          delegateUserId: str(query.delegateUserId),
+          priority: str(query.priority),
+          labelIds: labelIds && labelIds.length ? labelIds : undefined,
+          dueFrom: str(query.dueFrom),
+          dueTo: str(query.dueTo),
+          createdFrom: instantParam('createdFrom', query.createdFrom),
+          createdTo: instantParam('createdTo', query.createdTo),
+          updatedFrom: instantParam('updatedFrom', query.updatedFrom),
+          updatedTo: instantParam('updatedTo', query.updatedTo),
+          blocked: query.blocked === 'true',
+          sort: query.sort,
+          dir: query.dir,
+          limit,
+        },
+        { includeArchived: query.includeArchived === 'true' },
+      );
+    },
+    {
+      params: projectKeyParams,
+      query: listIssuesQuery,
+      permission: ['work_items', 'read'],
+      response: { 200: t.Array(IssueSearchHitResponse), ...commonErrors },
+      detail: {
+        summary: 'List issues by filters',
+        description:
+          "List a project's issues by field filters. Each issue has position (a lower value is " +
+          'nearer the top of its column), createdAt, updatedAt, completedAt, statusSince (when ' +
+          'it entered its current column), estimatePoints, estimateMinutes, loggedMinutes, and ' +
+          "its parent's identifier and title.",
+        ...mcpTool('list_issues'),
+      },
+    },
+  )
+
+  // The board's issue payload: every active issue with its labels, field values
+  // and relations. The work-items UI loads this alongside the project scaffold
+  // (GET /projects/:projectKey) and refetches it when the board scope of
+  // GET /sync/rev moves. Web-only (not an MCP tool): agents use list_issues /
+  // search_issues, and read an issue's relations with the issue itself.
+  .get(
+    '/projects/:projectKey/issues/board',
+    async ({ project }) => ({
+      issues: await attachDevelopmentSummaries(
+        await attachSubtaskCounts(
+          await attachBoardLinks(await listIssues(project), project.id),
+          project.id,
+        ),
+      ),
+    }),
+    {
+      params: projectKeyParams,
+      permission: ['work_items', 'read'],
+      response: { 200: BoardResponse, ...accessErrors },
+      detail: { summary: 'Get board issues' },
+    },
+  )
+
+  // Every issue under the listed ones, archived ones included, so the delete, archive
+  // and move confirmations can show what the action takes along. Web-only.
+  .get(
+    '/projects/:projectKey/issues/subtree',
+    async ({ project, query }) =>
+      listSubtree(project.id, query.ids.split(',').map(Number).filter(Number.isInteger)),
+    {
+      params: projectKeyParams,
+      query: subtreeQuery,
+      permission: ['work_items', 'read'],
+      response: { 200: t.Array(SubtreeIssueResponse), ...commonErrors },
+      detail: { summary: 'List the issues under issues' },
+    },
+  )
+
+  // The project's archived issues, newest archived first, for the archive view
+  // and restore. Same read permission as the board.
+  .get(
+    '/projects/:projectKey/issues/archived',
+    async ({ project }) => listArchivedIssues(project),
+    {
+      params: projectKeyParams,
+      permission: ['work_items', 'read'],
+      response: { 200: t.Array(IssueResponse), ...accessErrors },
+      detail: { summary: 'List archived issues' },
+    },
+  )
+
+  // Reads an issue by its project-scoped sequence number (the human number in a
+  // URL like /acme/issue/MKT-42), with its custom field values. Backs the
+  // identifier-based issue page. Same read permission as the by-id read.
+  .get(
+    '/projects/:projectKey/issues/:sequenceNumber',
+    async ({ project, params, user, request }) => {
+      const issue = await getIssueBySequence(project.id, params.sequenceNumber);
+      if (!issue) throw new HttpError(404, 'Issue not found');
+      // An old number of a moved issue resolves to it in the project it is in now,
+      // which the caller must be able to read as well.
+      if (issue.projectId !== project.id) {
+        await assertPermission(issue.projectId, user, 'work_items', 'read');
+        await assertMcpAllowed(issue.projectId, request.headers);
+      }
+      const fields = await getIssueFieldValues(issue.id);
+      const links = await listIssueLinks(issue.id);
+      const watchers = await listIssueWatchers(issue.projectId, issue.id);
+      const parent = await getParentRef(issue.parentId);
+      const subtasks = await listSubtasks(issue.id);
+      const ancestors = await listAncestors(issue.id);
+      const checklists = await listChecklists(issue.id);
+      const development = await listIssueDevelopmentLinks(issue.id);
+      return {
+        ...issue,
+        fields,
+        links,
+        watchers,
+        parent,
+        subtasks,
+        ancestors,
+        checklists,
+        development,
+      };
+    },
+    {
+      params: issueSequenceParams,
+      permission: ['work_items', 'read'],
+      response: { 200: IssueWithFieldsResponse, ...commonErrors },
+      detail: {
+        summary: 'Get an issue by number',
+        description:
+          'Get an issue by its project number: the 42 in "MKT-42". Use it when you have an ' +
+          'identifier. get_issue takes the internal numeric id.',
+        ...mcpTool('get_issue_by_number'),
+      },
+    },
+  )
+
+  // Text search across every project the caller may read work items in, matched like
+  // search_issues. This route comes before /issues/:issueId so the static "search"
+  // segment wins over the numeric param.
+  .get(
+    '/issues/search',
+    async ({ user, query, request }) => {
+      const ids = await readableProjectIds(requireUser(user).id, [['work_items', 'read']], {
+        mcpOnly: isMcpRequest(request.headers),
+      });
+      const bound = boundProjectId(request.headers);
+      const clamp = (value: number) => Math.min(Math.max(value, 1), 50);
+      return searchIssuesInProjects(
+        ids.filter((id) => (bound == null || id === bound) && id !== query.excludeProjectId),
+        query.q,
+        { limit: clamp(query.limit ?? 20), perProjectLimit: clamp(query.perProjectLimit ?? 5) },
+      );
+    },
+    {
+      query: searchAllIssuesQuery,
+      response: { 200: t.Array(CrossProjectIssueHitResponse), ...errors(400, 401) },
+      detail: {
+        summary: 'Search issues in all projects',
+        description:
+          'Search by text the issues of all projects you can read, archived issues included. ' +
+          'Each hit names its project. For one project, use search_issues. In an agent run, ' +
+          "searches only the run's project.",
+        ...requiresPermission(['work_items', 'read']),
+        ...mcpTool('search_issues_all_projects'),
+      },
+    },
+  )
+
+  // The list_issues filters that mean the same in every project, over every project the
+  // caller may read work items in. Empty values mean "any", as on list_issues.
+  .get(
+    '/issues',
+    async ({ user, query, request }) => {
+      const ids = await readableProjectIds(requireUser(user).id, [['work_items', 'read']], {
+        mcpOnly: isMcpRequest(request.headers),
+      });
+      const bound = boundProjectId(request.headers);
+      const str = (v: string | undefined) => (v ? v : undefined);
+      const csvIds = (v: string | undefined) => {
+        const list = v
+          ?.split(',')
+          .map(Number)
+          .filter((n) => Number.isInteger(n) && n > 0);
+        return list?.length ? list : undefined;
+      };
+      const stateTypes = query.stateTypes
+        ?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const unknown = stateTypes?.find(
+        (s) => !(ISSUE_STATE_TYPES as readonly string[]).includes(s),
+      );
+      if (unknown) throw new HttpError(400, `Unknown state type: ${unknown}`);
+      return listIssuesInProjects(
+        ids.filter((id) => bound == null || id === bound),
+        {
+          assigneeUserId: str(query.assigneeUserId),
+          delegateUserId: str(query.delegateUserId),
+          priority: str(query.priority),
+          dueFrom: str(query.dueFrom),
+          dueTo: str(query.dueTo),
+          createdFrom: instantParam('createdFrom', query.createdFrom),
+          createdTo: instantParam('createdTo', query.createdTo),
+          updatedFrom: instantParam('updatedFrom', query.updatedFrom),
+          updatedTo: instantParam('updatedTo', query.updatedTo),
+          cycleIds: csvIds(query.cycleIds),
+          parentIds: csvIds(query.parentIds),
+          stateTypes: stateTypes?.length ? (stateTypes as IssueStateType[]) : undefined,
+          sort: query.sort,
+          dir: query.dir,
+          limit: Math.min(Math.max(query.limit ?? 50, 1), 500),
+        },
+        { includeArchived: query.includeArchived === 'true' },
+      );
+    },
+    {
+      query: listAllIssuesQuery,
+      response: { 200: t.Array(CrossProjectIssueHitResponse), ...errors(400, 401) },
+      detail: {
+        summary: 'List issues in all projects',
+        description:
+          'List the issues of all projects you can read by field filters. Each issue names its ' +
+          'project. For one project and its project filters, use list_issues. In an agent run, ' +
+          "lists only the run's project.",
+        ...requiresPermission(['work_items', 'read']),
+        ...mcpTool('list_issues_all_projects'),
+      },
+    },
+  )
+
+  // Reads the full issue including its custom field values. The handler fetches the
+  // issue for the response, so it asserts access on that row instead of using the
+  // workItem guard, which would resolve the project id a second time.
+  .get(
+    '/issues/:issueId',
+    async ({ params, user, request }) => {
+      const issue = await getIssue(params.issueId);
+      if (!issue) throw new HttpError(404, 'Issue not found');
+      await assertPermission(issue.projectId, user, 'work_items', 'read');
+      // This route resolves the project itself, so it also enforces the per-project
+      // MCP toggle itself (it does not run through the workItem guard).
+      await assertMcpAllowed(issue.projectId, request.headers);
+      const fields = await getIssueFieldValues(issue.id);
+      const links = await listIssueLinks(issue.id);
+      const watchers = await listIssueWatchers(issue.projectId, issue.id);
+      const parent = await getParentRef(issue.parentId);
+      const subtasks = await listSubtasks(issue.id);
+      const ancestors = await listAncestors(issue.id);
+      const checklists = await listChecklists(issue.id);
+      const development = await listIssueDevelopmentLinks(issue.id);
+      return {
+        ...issue,
+        fields,
+        links,
+        watchers,
+        parent,
+        subtasks,
+        ancestors,
+        checklists,
+        development,
+      };
+    },
+    {
+      params: issueParams,
+      response: { 200: IssueWithFieldsResponse, ...commonErrors },
+      detail: {
+        summary: 'Get an issue',
+        description: 'Get an issue by its numeric id.',
+        ...requiresPermission(['work_items', 'read']),
+        ...mcpTool('get_issue'),
+      },
+    },
+  )
+
+  // Also handles moving an issue between columns (columnId) and reordering within
+  // a column (position).
+  .patch(
+    '/issues/:issueId',
+    async ({ params, body, user, projectId }) => {
+      const actorUserId = requireUser(user).id;
+      const issueId = params.issueId;
+      const { labelIds, ...patch } = body;
+      const issue = await updateIssue(issueId, patch, actorUserId);
+      if (!issue) throw new HttpError(404, 'Issue not found');
+      if (labelIds) {
+        await setIssueLabels(projectId, issueId, labelIds, actorUserId);
+        issue.labelIds = labelIds;
+      }
+      return issue;
+    },
+    {
+      body: updateIssueBody,
+      params: issueParams,
+      workItem: 'edit',
+      response: { 200: IssueResponse, ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Update an issue',
+        description:
+          'Update an issue. Moving it into a column at a ' +
+          'hard WIP limit returns 409 (code wip_limit_exceeded).',
+        ...mcpTool('update_issue'),
+      },
+    },
+  )
+
+  // Moves the issue, with its subtasks, to another project of the same team. It takes
+  // the next number there; the old identifier keeps resolving to it.
+  .post(
+    '/issues/:issueId/move',
+    async ({ params, body, target, user }) =>
+      moveIssue(params.issueId, target, body.columnId, requireUser(user).id),
+    {
+      params: issueParams,
+      body: moveIssueBody,
+      workItem: 'delete',
+      moveTarget: true,
+      response: { 200: IssueResponse, ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Move an issue to another project',
+        description:
+          'Move an issue and its subtasks to another project in the same team. Each moved issue ' +
+          'gets a new number. Its old identifier still resolves. Column, type, labels and custom ' +
+          'fields are matched by name. Cycle, initiative ' +
+          'and links to issues that stay behind are dropped.',
+        ...mcpTool('move_issue'),
+      },
+    },
+  )
+
+  .get(
+    '/issues/:issueId/development/repositories',
+    async ({ projectId }) => listDevelopmentRepositories(projectId),
+    {
+      params: issueParams,
+      developmentRepositories: 'edit',
+      response: { 200: t.Array(DevelopmentRepositoryResponse), ...accessErrors },
+      detail: {
+        summary: 'List repositories available to an issue',
+        description:
+          'List connected GitHub, GitLab, Gitea and Forgejo repositories that can link development work.',
+      },
+    },
+  )
+
+  .get(
+    '/issues/:issueId/development/repositories/:repositoryId/pull-requests',
+    async ({ params, query, projectId }) =>
+      listLinkablePullRequests(
+        projectId,
+        params.issueId,
+        params.repositoryId,
+        query.state ?? 'open',
+        query.page ?? 1,
+      ),
+    {
+      params: issueDevelopmentRepositoryParams,
+      query: issueDevelopmentListQuery,
+      developmentRepositories: 'edit',
+      response: { 200: LinkablePullRequestPageResponse, ...commonErrors },
+      detail: {
+        summary: 'List pull requests available to an issue',
+        description: 'List current pull requests or merge requests from a connected repository.',
+      },
+    },
+  )
+
+  .get(
+    '/issues/:issueId/development/repositories/:repositoryId/branches',
+    async ({ params, query, projectId }) =>
+      listManagedBranches(projectId, params.repositoryId, query.page ?? 1),
+    {
+      params: issueDevelopmentRepositoryParams,
+      query: issueDevelopmentListQuery,
+      developmentRepositories: 'edit',
+      response: { 200: DevelopmentBranchPageResponse, ...commonErrors },
+      detail: {
+        summary: 'List repository branches available to an issue',
+        description: 'List source and target branches for creating a pull request.',
+      },
+    },
+  )
+
+  .post(
+    '/issues/:issueId/development',
+    async ({ params, body, projectId, user, set }) => {
+      const result = await linkExistingPullRequest(
+        projectId,
+        params.issueId,
+        body.repositoryId,
+        body.number,
+      );
+      if (result.created) {
+        if (result.link.number == null)
+          throw new HttpError(500, 'Linked pull request has no number');
+        await recordActivity(
+          params.issueId,
+          [
+            {
+              action: 'git_pr',
+              subject: textSide(result.link.state === 'merged' ? 'merged' : 'opened'),
+              from: {
+                value: `${result.link.repository}#${result.link.number}`,
+                repo: result.link.repository,
+                number: result.link.number,
+              },
+              to: textSide(result.link.url),
+            },
+          ],
+          requireUser(user).id,
+        );
+      }
+      set.status = result.created ? 201 : 200;
+      return result.link;
+    },
+    {
+      params: issueParams,
+      body: linkIssueDevelopmentBody,
+      developmentRepositories: 'edit',
+      response: {
+        200: DevelopmentLinkResponse,
+        201: DevelopmentLinkResponse,
+        ...commonErrors,
+      },
+      detail: {
+        summary: 'Link an existing pull request',
+        description: 'Link a current pull request or merge request from a connected repository.',
+      },
+    },
+  )
+
+  .post(
+    '/issues/:issueId/development/pull-requests',
+    async ({ params, body, projectId, set }) => {
+      const sourceBranch = body.sourceBranch.trim();
+      const targetBranch = body.targetBranch.trim();
+      const title = body.title.trim();
+      if (!sourceBranch || !targetBranch || !title)
+        throw new HttpError(400, 'Branches and title are required');
+      if (sourceBranch === targetBranch)
+        throw new HttpError(400, 'Source and target branches must be different');
+      const result = await createAndLinkPullRequest(projectId, params.issueId, body.repositoryId, {
+        sourceBranch,
+        targetBranch,
+        title,
+        description: body.description,
+        draft: body.draft,
+      });
+      set.status = 201;
+      return result.link;
+    },
+    {
+      params: issueParams,
+      body: createIssuePullRequestBody,
+      developmentRepositories: 'edit',
+      response: { 201: DevelopmentLinkResponse, ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Create a pull request for an issue',
+        description:
+          'Create a GitHub, Gitea or Forgejo pull request, or a GitLab merge request, from an existing branch.',
+      },
+    },
+  )
+
+  .post(
+    '/issues/:issueId/development/branches',
+    async ({ params, body, projectId, set }) => {
+      const result = await createAndLinkBranch(
+        projectId,
+        params.issueId,
+        body.repositoryId,
+        body.branchName.trim(),
+        body.baseBranch.trim(),
+      );
+      set.status = 201;
+      return result;
+    },
+    {
+      params: issueParams,
+      body: createIssueBranchBody,
+      developmentRepositories: 'edit',
+      response: { 201: CreatedBranchResponse, ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Create a branch on GitHub and link it to an issue',
+        description: 'Create a new branch from a base branch and attach it to the issue.',
+      },
+    },
+  )
+
+  .delete(
+    '/issues/:issueId/development/:linkId',
+    async ({ params }) => {
+      if (!(await removeIssueDevelopmentLink(params.issueId, params.linkId)))
+        throw new HttpError(404, 'Development link not found');
+      return noContent();
+    },
+    {
+      params: issueDevelopmentLinkParams,
+      workItem: 'edit',
+      response: { 204: t.Void(), ...commonErrors },
+      detail: {
+        summary: 'Unlink a development item',
+        description: 'Remove one branch, pull request, or merge request from an issue.',
+      },
+    },
+  )
+
+  // Deletes an issue, together with its custom field values, labels, attachments,
+  // comments and activity. It then deletes the attachment objects from the object
+  // store. A failed object delete only orphans bytes, so it does not fail the
+  // request.
+  .delete(
+    '/issues/:issueId',
+    async ({ params, query, user, projectId }) => {
+      const fromSubtasks = await disposeSubtasksOf(
+        projectId,
+        [params.issueId],
+        'delete',
+        disposition(query),
+        requireUser(user).id,
+      );
+      const attachments = await deleteIssue(params.issueId, requireUser(user).id);
+      if (!attachments) throw new HttpError(404, 'Issue not found');
+      await purgeObjects([...fromSubtasks, ...attachments]);
+      return noContent();
+    },
+    {
+      params: issueParams,
+      query: subtaskDispositionQuery,
+      workItem: 'delete',
+      response: { 204: t.Void(), ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Delete an issue',
+        description: 'Permanently delete an issue. An issue with subtasks needs `subtasks`.',
+        ...mcpTool('delete_issue'),
+      },
+    },
+  )
+
+  // Archives an issue: hides it from the board and lists but keeps it, so it can
+  // be restored. The same effect the worker's auto-archive sweep applies, done on
+  // demand. Uses the work_items edit permission.
+  .post(
+    '/issues/:issueId/archive',
+    async ({ params, body, user, projectId }) => {
+      const actorUserId = requireUser(user).id;
+      await disposeSubtasksOf(
+        projectId,
+        [params.issueId],
+        'archive',
+        disposition(body),
+        actorUserId,
+      );
+      const issue = await archiveIssue(params.issueId, actorUserId);
+      if (!issue) throw new HttpError(404, 'Issue not found');
+      return issue;
+    },
+    {
+      params: issueParams,
+      body: archiveIssueBody,
+      workItem: 'edit',
+      response: { 200: IssueResponse, ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Archive an issue',
+        description: 'Archive an issue. An issue with subtasks needs `subtasks`.',
+        ...mcpTool('archive_issue'),
+      },
+    },
+  )
+
+  // Restores an archived issue back onto the board (clears archived_at), together
+  // with its archived subtasks.
+  .post(
+    '/issues/:issueId/restore',
+    async ({ params, user }) => {
+      const actorUserId = requireUser(user).id;
+      const issue = await restoreIssue(params.issueId, actorUserId);
+      if (!issue) throw new HttpError(404, 'Issue not found');
+      await restoreSubtasksOf(issue.projectId, issue.id, actorUserId);
+      return issue;
+    },
+    {
+      params: issueParams,
+      workItem: 'edit',
+      response: { 200: IssueResponse, ...commonErrors },
+      detail: {
+        summary: 'Restore an archived issue',
+        description: 'Restore an archived issue and its archived subtasks.',
+        ...mcpTool('restore_issue'),
+      },
+    },
+  )
+
+  // Sets one custom field's value on one issue. For a select or multi_select field,
+  // body.optionIds replaces the full selection. For every other field type, body.value
+  // must match the field's type (text/number/boolean/date/datetime, and the user id of
+  // a project member for a member field). A datetime_range takes its end in
+  // body.valueEnd.
+  .put(
+    '/issues/:issueId/fields/:fieldId',
+    async ({ params, body, user, projectId }) => {
+      await setIssueFieldValue(
+        projectId,
+        params.issueId,
+        params.fieldId,
+        body,
+        requireUser(user).id,
+      );
+      return { ok: true };
+    },
+    {
+      body: setIssueFieldValueBody,
+      params: issueFieldParams,
+      workItem: 'edit',
+      response: { 200: WatchStateResponse, ...commonErrors },
+      detail: {
+        summary: 'Set a custom field value',
+        description:
+          'Set a custom field value on an issue. A member field takes the user id of a project ' +
+          "member that the field's scope allows.",
+        ...mcpTool('set_issue_field_value'),
+      },
+    },
+  )
+
+  // Links the issue in the path to another issue of the same project. The
+  // relation reads from the issue in the path (it blocks / relates to /
+  // duplicates the target); both issues show it, each from its own side. Reading
+  // the relations is part of the issue read, so there is no list route.
+  .post(
+    '/issues/:issueId/links',
+    async ({ params, body, user, set }) => {
+      set.status = 201;
+      return addIssueLink(params.issueId, body.targetIssueId, body.kind, requireUser(user).id);
+    },
+    {
+      body: addIssueLinkBody,
+      params: issueParams,
+      workItem: 'edit',
+      response: { 201: IssueLinkResponse, ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Link two issues',
+        description:
+          'Link an issue to another issue in the same project. Read kind from issueId to ' +
+          "targetIssueId: 'blocks' means issueId blocks targetIssueId.",
+        ...mcpTool('link_issues'),
+      },
+    },
+  )
+
+  // Removes one relation. The link id comes from the issue's own links, so a link
+  // between two other issues cannot be removed through it.
+  .delete(
+    '/issues/:issueId/links/:linkId',
+    async ({ params, user }) => {
+      const removed = await removeIssueLink(params.issueId, params.linkId, requireUser(user).id);
+      if (!removed) throw new HttpError(404, 'Link not found');
+      return noContent();
+    },
+    {
+      params: issueLinkParams,
+      workItem: 'edit',
+      response: { 204: t.Void(), ...commonErrors },
+      detail: {
+        summary: 'Unlink two issues',
+        description: 'Remove an issue relation by its link id.',
+        ...mcpTool('unlink_issues'),
+      },
+    },
+  )
+
+  // Checklists on the issue: lists of small steps that do not warrant a subtask.
+  // The issue read already carries them, so this list route is for a refresh
+  // after a checklist write rather than the first render.
+  .get('/issues/:issueId/checklists', async ({ params }) => listChecklists(params.issueId), {
+    params: issueParams,
+    issueChecklist: 'read',
+    response: { 200: t.Array(ChecklistResponse), ...commonErrors },
+    detail: {
+      summary: "List an issue's checklists",
+      description: 'Every checklist of an issue with its items, both in display order.',
+    },
+  })
+
+  .post(
+    '/issues/:issueId/checklists',
+    async ({ params, body, user, set }) => {
+      set.status = 201;
+      return createChecklist(params.issueId, body.title, requireUser(user).id);
+    },
+    {
+      body: checklistTitleBody,
+      params: issueParams,
+      issueChecklist: 'edit',
+      response: { 201: ChecklistResponse, ...commonErrors },
+      detail: {
+        summary: 'Add a checklist',
+        description: 'Add an empty checklist to an issue. Add items with create_checklist_items.',
+        ...mcpTool('create_checklist'),
+      },
+    },
+  )
+
+  // Registered before /checklists/:checklistId so the literal segment wins over
+  // the parameter.
+  .put(
+    '/issues/:issueId/checklists/reorder',
+    async ({ params, body }) => reorderChecklists(params.issueId, body.orderedIds),
+    {
+      body: OrderedIdsSchema,
+      params: issueParams,
+      issueChecklist: 'edit',
+      response: { 200: t.Array(ChecklistResponse), ...commonErrors },
+      detail: {
+        summary: "Reorder an issue's checklists",
+        description: "Set the display order of an issue's checklists.",
+        ...mcpTool('reorder_checklists'),
+      },
+    },
+  )
+
+  .patch(
+    '/checklists/:checklistId',
+    async ({ params, body, user }) =>
+      renameChecklist(params.checklistId, body.title, requireUser(user).id),
+    {
+      body: checklistTitleBody,
+      params: checklistParams,
+      checklist: 'edit',
+      response: { 200: ChecklistResponse, ...commonErrors },
+      detail: {
+        summary: 'Rename a checklist',
+        description: 'Rename a checklist.',
+        ...mcpTool('rename_checklist'),
+      },
+    },
+  )
+
+  // Deleting a checklist deletes its items with it.
+  .delete(
+    '/checklists/:checklistId',
+    async ({ params, user }) => {
+      const removed = await deleteChecklist(params.checklistId, requireUser(user).id);
+      if (!removed) throw new HttpError(404, 'Checklist not found');
+      return noContent();
+    },
+    {
+      params: checklistParams,
+      checklist: 'edit',
+      response: { 204: t.Void(), ...commonErrors },
+      detail: {
+        summary: 'Delete a checklist',
+        description: 'Delete a checklist and all its items.',
+        ...mcpTool('delete_checklist'),
+      },
+    },
+  )
+
+  .post(
+    '/checklists/:checklistId/items',
+    async ({ params, body, user, set }) => {
+      set.status = 201;
+      return createChecklistItem(params.checklistId, body.content, requireUser(user).id);
+    },
+    {
+      body: createChecklistItemBody,
+      params: checklistParams,
+      checklist: 'edit',
+      response: { 201: ChecklistItemResponse, ...commonErrors },
+      detail: {
+        summary: 'Add a checklist item',
+        description: 'Append an item to a checklist.',
+        ...mcpTool('create_checklist_item'),
+      },
+    },
+  )
+
+  .post(
+    '/checklists/:checklistId/items/batch',
+    async ({ params, body, user, set }) => {
+      set.status = 201;
+      return createChecklistItems(params.checklistId, body.items, requireUser(user).id);
+    },
+    {
+      body: createChecklistItemsBody,
+      params: checklistParams,
+      checklist: 'edit',
+      response: { 201: t.Array(ChecklistItemResponse), ...commonErrors },
+      detail: {
+        summary: 'Add checklist items in bulk',
+        description:
+          'Append items to an existing checklist, in input order. All items are saved, or none.',
+        ...mcpTool('create_checklist_items'),
+      },
+    },
+  )
+
+  .put(
+    '/checklists/:checklistId/items/reorder',
+    async ({ params, body }) => reorderChecklistItems(params.checklistId, body.orderedIds),
+    {
+      body: OrderedIdsSchema,
+      params: checklistParams,
+      checklist: 'edit',
+      response: { 200: t.Array(ChecklistItemResponse), ...commonErrors },
+      detail: {
+        summary: 'Reorder checklist items',
+        description: 'Set the display order of the items in a checklist.',
+        ...mcpTool('reorder_checklist_items'),
+      },
+    },
+  )
+
+  // Edits the text, the checked state, or both. Checking a box is the most
+  // frequent write here, so it deliberately does not reach the activity feed.
+  .patch(
+    '/checklists/items/:itemId',
+    async ({ params, body }) => updateChecklistItem(params.itemId, body),
+    {
+      body: updateChecklistItemBody,
+      params: checklistItemParams,
+      checklistItem: 'edit',
+      response: { 200: ChecklistItemResponse, ...commonErrors },
+      detail: {
+        summary: 'Update a checklist item',
+        description: "Change a checklist item's text, checked state, or both.",
+        ...mcpTool('update_checklist_item'),
+      },
+    },
+  )
+
+  .delete(
+    '/checklists/items/:itemId',
+    async ({ params, user }) => {
+      const removed = await deleteChecklistItem(params.itemId, requireUser(user).id);
+      if (!removed) throw new HttpError(404, 'Checklist item not found');
+      return noContent();
+    },
+    {
+      params: checklistItemParams,
+      checklistItem: 'edit',
+      response: { 204: t.Void(), ...commonErrors },
+      detail: {
+        summary: 'Delete a checklist item',
+        description: 'Delete a checklist item.',
+        ...mcpTool('delete_checklist_item'),
+      },
+    },
+  )
+
+  .get(
+    '/issues/:issueId/agent-runs',
+    async ({ params, query, projectId }) =>
+      listIssueAgentRuns(projectId, params.issueId, query.before, query.limit),
+    {
+      params: issueParams,
+      query: issueAgentRunsQuery,
+      issueAgentRuns: true,
+      response: { 200: IssueAgentRunPageResponse, ...commonErrors },
+      detail: {
+        summary: "List an issue's agent runs",
+        description:
+          'Triggered runs in the current project, newest first, including the prompt, result and error.',
+      },
+    },
+  )
+
+  .get(
+    '/issues/:issueId/agent-runs/:runId/trace',
+    async ({ params, user, query, projectId }) => {
+      const trace = await getIssueAgentRunTrace(
+        projectId,
+        params.issueId,
+        params.runId,
+        requireUser(user).id,
+        query.traceId,
+      );
+      if (trace === undefined) throw new HttpError(404, 'Run not found');
+      return Response.json(trace);
+    },
+    {
+      params: issueAgentRunParams,
+      query: issueAgentTraceQuery,
+      issueAgentRuns: true,
+      response: {
+        200: IssueAgentRunTraceResponse,
+        ...commonErrors,
+      },
+      detail: {
+        summary: "Read an issue run's trace",
+        description:
+          'The selected or latest recorded attempt, with a link to the previous one. ' +
+          'Null when no latest trace is available. Also takes creating or changing agents in ' +
+          "the project, unless the caller runs the team, owns the project or is the run's initiator.",
+      },
+    },
+  )
+
+  // The time logged on the issue. The entries are their own read: the issue payload
+  // carries their sum, which is what a board and the Time property show, and only
+  // the section that lists them needs the entries themselves.
+  .get('/issues/:issueId/worklogs', async ({ params }) => listWorklogs(params.issueId), {
+    params: issueParams,
+    workItem: 'read',
+    response: { 200: t.Array(WorklogResponse), ...commonErrors },
+    detail: {
+      summary: "List an issue's logged time",
+      description: 'List all time entries on an issue, newest day first.',
+      ...mcpTool('list_worklogs'),
+    },
+  })
+
+  .post(
+    '/issues/:issueId/worklogs',
+    async ({ params, body, user, set }) => {
+      set.status = 201;
+      return createWorklog(params.issueId, requireUser(user).id, body);
+    },
+    {
+      body: createWorklogBody,
+      params: issueParams,
+      workItem: 'edit',
+      response: { 201: WorklogResponse, ...commonErrors },
+      detail: {
+        summary: 'Log time on an issue',
+        description: 'Log time spent on an issue. The entry belongs to you.',
+        ...mcpTool('create_worklog'),
+      },
+    },
+  )
+
+  .patch(
+    '/worklogs/:worklogId',
+    async ({ params, body, user }) => updateWorklog(params.worklogId, body, requireUser(user).id),
+    {
+      body: updateWorklogBody,
+      params: worklogParams,
+      worklog: true,
+      response: { 200: WorklogResponse, ...commonErrors },
+      detail: {
+        summary: 'Change a time entry',
+        description:
+          'Change the time, day or note of a time entry. Your own entry needs work_items edit. ' +
+          "Only a project owner can change another member's entry.",
+        ...mcpTool('update_worklog'),
+      },
+    },
+  )
+
+  .delete(
+    '/worklogs/:worklogId',
+    async ({ params, user }) => {
+      const removed = await deleteWorklog(params.worklogId, requireUser(user).id);
+      if (!removed) throw new HttpError(404, 'Time entry not found');
+      return noContent();
+    },
+    {
+      params: worklogParams,
+      worklog: true,
+      response: { 204: t.Void(), ...commonErrors },
+      detail: {
+        summary: 'Delete a time entry',
+        description:
+          'Delete a time entry. Your own entry needs work_items edit. Only a project owner can ' +
+          "delete another member's entry.",
+        ...mcpTool('delete_worklog'),
+      },
+    },
+  )
+
+  // Follows the issue: the caller receives every notification it produces until
+  // they unwatch it. This self-service route only ever changes the caller; editors
+  // use the watcher-management routes below for other members. Reading the issue
+  // is enough, since watching adds no other access. Both routes return the same
+  // watcher list carried by the issue read.
+  .post(
+    '/issues/:issueId/watch',
+    async ({ params, projectId, user }) => {
+      await setIssueWatching(params.issueId, requireUser(user).id, true);
+      return listIssueWatchers(projectId, params.issueId);
+    },
+    {
+      params: issueParams,
+      workItem: 'read',
+      response: { 200: t.Array(IssueWatcherResponse), ...commonErrors },
+      detail: {
+        summary: 'Watch an issue',
+        description: 'Subscribe the current user to an issue and return its watchers.',
+      },
+    },
+  )
+
+  // Stops following the issue. The route records the unsubscription instead of
+  // forgetting it, so a later comment on the issue does not silently re-subscribe
+  // the caller.
+  .delete(
+    '/issues/:issueId/watch',
+    async ({ params, projectId, user }) => {
+      await setIssueWatching(params.issueId, requireUser(user).id, false);
+      return listIssueWatchers(projectId, params.issueId);
+    },
+    {
+      params: issueParams,
+      workItem: 'read',
+      response: { 200: t.Array(IssueWatcherResponse), ...commonErrors },
+      detail: {
+        summary: 'Unwatch an issue',
+        description: 'Unsubscribe the current user from an issue and return its watchers.',
+      },
+    },
+  )
+
+  // Editors can curate the full watcher list when a handoff or review needs to
+  // reach someone immediately. The target must be a real project member: agents
+  // have their own delegation flow and must never receive human notifications.
+  .put(
+    '/issues/:issueId/watchers/:userId',
+    async ({ params, projectId }) => {
+      if (!(await isEligibleIssueWatcher(projectId, params.userId))) {
+        throw new HttpError(400, 'Watcher must be a human project member with work item access');
+      }
+      await setIssueWatching(params.issueId, params.userId, true);
+      return listIssueWatchers(projectId, params.issueId);
+    },
+    {
+      params: issueWatcherParams,
+      workItem: 'edit',
+      response: { 200: t.Array(IssueWatcherResponse), ...commonErrors },
+      detail: {
+        summary: 'Add an issue watcher',
+        description: 'Subscribe another human project member to an issue. Needs work_items edit.',
+        ...mcpTool('add_issue_watcher'),
+      },
+    },
+  )
+
+  .delete(
+    '/issues/:issueId/watchers/:userId',
+    async ({ params, projectId }) => {
+      if (!(await isEligibleIssueWatcher(projectId, params.userId))) {
+        throw new HttpError(400, 'Watcher must be a human project member with work item access');
+      }
+      await setIssueWatching(params.issueId, params.userId, false);
+      return listIssueWatchers(projectId, params.issueId);
+    },
+    {
+      params: issueWatcherParams,
+      workItem: 'edit',
+      response: { 200: t.Array(IssueWatcherResponse), ...commonErrors },
+      detail: {
+        summary: 'Remove an issue watcher',
+        description:
+          'Unsubscribe another human project member from an issue. Needs work_items edit.',
+        ...mcpTool('remove_issue_watcher'),
+      },
+    },
+  )
+
+  // One page of an issue's timeline: comments and change-log activity merged in
+  // issue_activity, newest first unless `order` is 'asc', narrowed by `filter`.
+  // `limit` (default 25) and an opaque `cursor` (the JSON-encoded nextCursor from the
+  // previous page) drive keyset pagination. The response is { items, nextCursor }, and
+  // nextCursor is null on the last page.
+  .get(
+    '/issues/:issueId/feed',
+    async ({ params, query }) =>
+      listFeed(params.issueId, { ...query, cursor: feedCursor(query.cursor) }),
+    {
+      params: issueParams,
+      query: feedPageQuery,
+      workItem: 'read',
+      response: { 200: FeedPageResponse, ...commonErrors },
+      detail: {
+        summary: 'Get an issue feed',
+        description:
+          "Get an issue's activity feed: comments and change-log entries, newest first by " +
+          'default. A page holds top-level entries. Each comment comes with its replies, which ' +
+          'have the parent id in replyToId.',
+        ...mcpTool('list_issue_activity'),
+      },
+    },
+  )
+
+  // The same page, split into the stretches the issue spent in one column: the
+  // grouped shape of the activity log reads this instead of grouping client-side.
+  .get(
+    '/issues/:issueId/feed/grouped',
+    async ({ params, query }) =>
+      listGroupedFeed(params.issueId, { ...query, cursor: feedCursor(query.cursor) }),
+    {
+      params: issueParams,
+      query: feedPageQuery,
+      workItem: 'read',
+      response: { 200: GroupedFeedPageResponse, ...commonErrors },
+      detail: {
+        summary: 'Get an issue feed grouped by status',
+        description:
+          "Get a page of an issue's activity feed, split into the stretches it spent in one status.",
+      },
+    },
+  )
+
+  // The number of entries behind each feed filter, for the tabs of the activity log.
+  .get('/issues/:issueId/feed/counts', async ({ params }) => countFeed(params.issueId), {
+    params: issueParams,
+    workItem: 'read',
+    response: { 200: FeedCountsResponse, ...commonErrors },
+    detail: {
+      summary: 'Count an issue feed',
+      description: "Count an issue's comments, change-log entries and time entries.",
+    },
+  })
+
+  // The stretches the issue spent in one column, oldest first, with the duration of
+  // each. Entry-free and unpaged: the change log holds a handful of status entries,
+  // and a client reads the entries of one stretch separately when it opens that
+  // stretch.
+  .get('/issues/:issueId/timeline', async ({ params }) => listStatusTimeline(params.issueId), {
+    params: issueParams,
+    issueStats: 'read',
+    response: { 200: t.Array(TimelineSegmentResponse), ...commonErrors },
+    detail: {
+      summary: 'Get an issue status timeline',
+      description: "Get the stretches an issue spent in each status, with each one's duration.",
+    },
+  })
+
+  // The entries of one stretch of that timeline, addressed by its bounds: the
+  // client opening a bar asks for [from, to), leaving `to` off for the open one.
+  .get(
+    '/issues/:issueId/timeline/items',
+    async ({ params, query }) => listFeedRange(params.issueId, query.from, query.to),
+    {
+      params: issueParams,
+      query: feedRangeQuery,
+      issueStats: 'read',
+      response: { 200: t.Array(FeedItemResponse), ...commonErrors },
+      detail: {
+        summary: 'Get the activity of one timeline stretch',
+        description: "Get an issue's activity entries written between two moments, oldest first.",
+      },
+    },
+  )
+
+  // Read on its own, not as part of the issue: only the issue screen shows the
+  // cycles, and every board carries the issue payload.
+  .get('/issues/:issueId/cycles', async ({ params }) => listIssueCycles(params.issueId), {
+    params: issueParams,
+    workItem: 'read',
+    response: { 200: t.Array(IssueCycleResponse), ...commonErrors },
+    detail: {
+      summary: 'Get an issue cycle history',
+      description:
+        'Get the cycles an issue was in, oldest first: the ones it was still planned into when they ended, plus its current one.',
+    },
+  })
+
+  // Post a comment on an issue. The author is the session user (a member or an
+  // agent's bot user).
+  .post(
+    '/issues/:issueId/comments',
+    async ({ params, body, user, set }) => {
+      set.status = 201;
+      return createComment({
+        issueId: params.issueId,
+        actorUserId: requireUser(user).id,
+        body: body.body,
+        replyToId: body.replyToId,
+      });
+    },
+    {
+      body: createCommentBody,
+      params: issueParams,
+      workItem: 'edit',
+      response: { 201: FeedItemResponse, ...commonErrors },
+      detail: {
+        summary: 'Add a comment',
+        description:
+          'Add a comment to an issue. Pass replyToId to reply to an existing comment of the ' +
+          'issue. @username in the body notifies that member ' +
+          'or AI agent. Usernames are in get_project.assignees.',
+        ...mcpTool('add_comment'),
+      },
+    },
+  )
+
+  // Edits a comment's body. The author edits their own with the work_items edit
+  // the comment guard asserts; another member's only a project owner can change.
+  .patch(
+    '/comments/:commentId',
+    async ({ params, body, user, projectId }) =>
+      updateComment(params.commentId, body.body, requireUser(user).id, projectId),
+    {
+      body: updateCommentBody,
+      params: commentParams,
+      comment: true,
+      response: { 200: FeedItemResponse, ...commonErrors },
+      detail: {
+        summary: 'Edit a comment',
+        description:
+          "Change a comment's text. Members newly mentioned in the edit are notified, and newly " +
+          'mentioned agents run. Your own comment needs work_items edit. Only a project owner ' +
+          "can change another member's comment.",
+        ...mcpTool('update_comment'),
+      },
+    },
+  )
+
+  // Deletes a comment, together with its replies (they cascade on reply_to_id).
+  .delete(
+    '/comments/:commentId',
+    async ({ params, user, projectId }) => {
+      const removed = await deleteComment(params.commentId, requireUser(user).id, projectId);
+      if (!removed) throw new HttpError(404, 'Comment not found');
+      return noContent();
+    },
+    {
+      params: commentParams,
+      comment: true,
+      response: { 204: t.Void(), ...commonErrors },
+      detail: {
+        summary: 'Delete a comment',
+        description:
+          'Delete a comment and its replies. Your own comment needs work_items edit. Only a ' +
+          "project owner can delete another member's comment.",
+        ...mcpTool('delete_comment'),
+      },
+    },
+  )
+
+  // Answers with every reaction of the comment, so the caller needs no second read.
+  .post(
+    '/comments/:commentId/reactions',
+    async ({ params, body, user, set, projectId }) => {
+      set.status = 201;
+      return addReaction(params.commentId, requireUser(user).id, body.emoji, projectId);
+    },
+    {
+      body: addReactionBody,
+      params: commentParams,
+      commentReaction: 'edit',
+      response: { 201: t.Array(CommentReactionResponse), ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'React to a comment',
+        description:
+          'Add your emoji reaction to a comment. Pass the emoji character, not a name like ' +
+          ':thumbsup:. You can add several different emoji, each once. Repeating one does ' +
+          'nothing. The author is notified of your first reaction. Returns 409 when the comment ' +
+          'has the maximum number of different emoji.',
+        ...mcpTool('add_comment_reaction', { idempotentHint: true }),
+      },
+    },
+  )
+
+  .delete(
+    '/comments/:commentId/reactions/:emoji',
+    async ({ params, user }) => {
+      await removeReaction(params.commentId, requireUser(user).id, params.emoji);
+      return noContent();
+    },
+    {
+      params: reactionParams,
+      commentReaction: 'edit',
+      response: { 204: t.Void(), ...commonErrors },
+      detail: {
+        summary: 'Remove a reaction from a comment',
+        description:
+          'Remove your emoji reaction from a comment. ' +
+          'Removing one that is not there does nothing.',
+        ...mcpTool('remove_comment_reaction', { destructiveHint: false }),
+      },
+    },
+  );

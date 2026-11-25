@@ -1,0 +1,1481 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+/* The upstream Inter build, not the Fontsource one: Google Fonts strips the
+   character variants, and cv05/cv08/zero are what make l, I, 1 and 0 tell
+   apart at the 12–14px this UI is mostly set in. It also carries the opsz
+   axis, so small text gets the wider-spaced optical master. */
+@import 'inter-ui/inter-variable.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'InterVariable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
+  --color-overdue: var(--overdue);
+  --color-warning: var(--warning);
+  --color-pro: var(--pro);
+  --color-pro-foreground: var(--pro-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --color-kanban-column: var(--kanban-column);
+  --color-kanban-column-raised: var(--kanban-column-raised);
+  --color-kanban-column-wip-destructive: var(--kanban-column-wip-destructive);
+  --color-kanban-column-wip-warning: var(--kanban-column-wip-warning);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  /* Tailwind's default line-heights are tuned for prose at 16px; the app runs on
+     text-xs/text-sm, where they leave multi-line text cramped. Body sizes get 1.5+,
+     headings tighten as they grow. */
+  --text-xs--line-height: 1.5;
+  --text-sm--line-height: 1.5;
+  --text-base--line-height: 1.6;
+  --text-lg--line-height: 1.55;
+  --text-xl--line-height: 1.4;
+  --text-2xl--line-height: 1.25;
+  --text-2xl--letter-spacing: -0.01em;
+  --text-3xl--line-height: 1.15;
+  --text-3xl--letter-spacing: -0.02em;
+  --text-4xl--line-height: 1.1;
+  --text-4xl--letter-spacing: -0.025em;
+}
+
+/* Grayscale ramps with no hue, and the page never sits on pure white or pure black.
+   Text pairs are measured with APCA, not eyeballed: see DESIGN.md for the thresholds. */
+:root {
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.18 0 0);
+  --card: oklch(0.998 0 0);
+  --card-foreground: oklch(0.18 0 0);
+  --popover: oklch(0.998 0 0);
+  --popover-foreground: oklch(0.18 0 0);
+  --primary: oklch(0.22 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0.22 0 0);
+  --muted: oklch(0.965 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.955 0 0);
+  --accent-foreground: oklch(0.22 0 0);
+  --destructive: oklch(0.505 0.21 27);
+  --destructive-text: var(--destructive);
+  --warning: oklch(0.52 0.11 72);
+  /* One pair for both themes: .dark does not override it. */
+  --pro: oklch(0.87 0.16 92);
+  --pro-foreground: oklch(0.25 0.05 80);
+  --border: oklch(0.905 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.62 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.972 0 0);
+  --sidebar-foreground: oklch(0.18 0 0);
+  --sidebar-primary: oklch(0.22 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.94 0 0);
+  --sidebar-accent-foreground: oklch(0.22 0 0);
+  --sidebar-border: oklch(0.905 0 0);
+  --sidebar-ring: oklch(0.62 0 0);
+  --priority-low: #6b7280;
+  --priority-medium: #eab308;
+  --priority-high: #f97316;
+  --priority-urgent: #f2683c;
+  --kanban-column: oklch(0.945 0 0);
+  --kanban-column-raised: oklch(0.958 0 0);
+  /* A state tint keeps the lightness of the surface it replaces, so the cards keep
+     their contrast against it; only hue and chroma change. */
+  --kanban-column-wip-destructive: oklch(0.94 0.022 18);
+  --kanban-column-wip-warning: oklch(0.945 0.03 92);
+  --kanban-card: oklch(0.972 0 0);
+  --kanban-card-hover: oklch(0.995 0 0);
+  --kanban-card-blocked: oklch(0.968 0.013 15);
+  --kanban-card-blocked-hover: oklch(0.984 0.008 15);
+  --row-blocked: oklch(0.978 0.01 15);
+  --row-blocked-hover: oklch(0.963 0.014 15);
+  --overdue: color-mix(in oklab, var(--destructive) 9%, var(--kanban-card));
+  --kanban-card-selected: oklch(0.925 0.04 265);
+  --overlay-shadow: 0 12px 28px -8px rgb(0 0 0 / 0.18), 0 4px 10px -4px rgb(0 0 0 / 0.1);
+  --pinned-column-shadow: 0 0 18px 2px rgb(0 0 0 / 0.16);
+  /* A panel on a side edge casts to the side, so the glow has no offset. */
+  --side-panel-shadow: 0 0 28px 6px rgb(0 0 0 / 0.16);
+  --modal-shadow: 0 32px 64px -16px rgb(0 0 0 / 0.28), 0 12px 24px -12px rgb(0 0 0 / 0.16);
+  /* The chat tab row casts down on the transcript under it; the composer is a
+     rounded surface the transcript scrolls up to, so it casts all round. */
+  --chat-tabs-shadow: 0 10px 16px -6px rgb(0 0 0 / 0.28);
+  --chat-composer-shadow: 0 -2px 20px 2px rgb(0 0 0 / 0.22);
+}
+
+.dark {
+  --background: oklch(0.185 0 0);
+  --foreground: oklch(0.965 0 0);
+  --card: oklch(0.225 0 0);
+  --card-foreground: oklch(0.965 0 0);
+  --popover: oklch(0.24 0 0);
+  --popover-foreground: oklch(0.965 0 0);
+  --primary: oklch(0.93 0 0);
+  --primary-foreground: oklch(0.18 0 0);
+  --secondary: oklch(0.29 0 0);
+  --secondary-foreground: oklch(0.965 0 0);
+  --muted: oklch(0.29 0 0);
+  --muted-foreground: oklch(0.865 0 0);
+  --accent: oklch(0.3 0 0);
+  --accent-foreground: oklch(0.965 0 0);
+  --destructive: oklch(0.77 0.18 22);
+  --destructive-text: oklch(0.82 0.13 20);
+  --warning: oklch(0.82 0.14 80);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 18%);
+  --ring: oklch(0.62 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.145 0 0);
+  --sidebar-foreground: oklch(0.965 0 0);
+  --sidebar-primary: oklch(0.93 0 0);
+  --sidebar-primary-foreground: oklch(0.18 0 0);
+  --sidebar-accent: oklch(0.24 0 0);
+  --sidebar-accent-foreground: oklch(0.965 0 0);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.62 0 0);
+  --priority-low: #9ca3af;
+  --priority-medium: #eab308;
+  --priority-high: #f97316;
+  --priority-urgent: #f2683c;
+  --kanban-column: oklch(0.16 0 0);
+  --kanban-column-raised: oklch(0.19 0 0);
+  --kanban-column-wip-destructive: oklch(0.16 0.028 15);
+  --kanban-column-wip-warning: oklch(0.16 0.016 88);
+  --kanban-card: oklch(0.215 0 0);
+  --kanban-card-hover: oklch(0.25 0 0);
+  --kanban-card-blocked: oklch(0.215 0.03 10);
+  --kanban-card-blocked-hover: oklch(0.25 0.034 10);
+  --row-blocked: oklch(0.2 0.024 10);
+  --row-blocked-hover: oklch(0.235 0.03 10);
+  --overdue: color-mix(in oklab, var(--destructive) 12%, var(--kanban-card));
+  --kanban-card-selected: oklch(0.31 0.07 266);
+  --overlay-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.7), 0 6px 16px -6px rgb(0 0 0 / 0.55);
+  --pinned-column-shadow: 0 0 20px 4px rgb(0 0 0 / 0.6);
+  --side-panel-shadow: 0 0 28px 8px rgb(0 0 0 / 0.65);
+  --modal-shadow: 0 40px 80px -20px rgb(0 0 0 / 0.85), 0 16px 32px -16px rgb(0 0 0 / 0.7);
+  --chat-tabs-shadow: 0 12px 18px -6px rgb(0 0 0 / 0.75);
+  --chat-composer-shadow: 0 -2px 22px 4px rgb(0 0 0 / 0.7);
+}
+
+/* The palettes a user can pick besides the default, in light and dark. They override
+   colors only; shadows, radius and the pro badge stay shared. The root layout sets
+   data-palette from the color theme cookie. */
+:root[data-palette='github'] {
+  --background: #f6f8fa;
+  --foreground: #1f2328;
+  --card: #ffffff;
+  --card-foreground: #1f2328;
+  --popover: #ffffff;
+  --popover-foreground: #1f2328;
+  --primary: #0969da;
+  --primary-foreground: #ffffff;
+  --secondary: #eff2f5;
+  --secondary-foreground: #1f2328;
+  --muted: #eff2f5;
+  --muted-foreground: #4d5661;
+  --accent: #eaeef2;
+  --accent-foreground: #1f2328;
+  --destructive: #d1242f;
+  --destructive-text: #c81627;
+  --warning: #8c5e0c;
+  --border: #d1d9e0;
+  --input: #d1d9e0;
+  --ring: #0969da;
+  --chart-1: #0969da;
+  --chart-2: #1a7f37;
+  --chart-3: #9a6700;
+  --chart-4: #8250df;
+  --chart-5: #bf3989;
+  --sidebar: #eff2f5;
+  --sidebar-foreground: #1f2328;
+  --sidebar-primary: #0969da;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e0e4e7;
+  --sidebar-accent-foreground: #1f2328;
+  --sidebar-border: #d1d9e0;
+  --sidebar-ring: #0969da;
+  --priority-low: #818b98;
+  --priority-medium: #9a6700;
+  --priority-high: #bc4c00;
+  --priority-urgent: #d1242f;
+  --kanban-column: #ebeff2;
+  --kanban-column-raised: #f0f3f6;
+  --kanban-column-wip-destructive: #e9e1e4;
+  --kanban-column-wip-warning: #e3e1da;
+  --kanban-card: #ffffff;
+  --kanban-card-hover: #f6f6f6;
+  --kanban-card-blocked: #fcf2f3;
+  --kanban-card-blocked-hover: #f4e9ea;
+  --row-blocked: #f4edf0;
+  --row-blocked-hover: #f3e5e8;
+  --kanban-card-selected: #d8e7f9;
+}
+
+:root[data-palette='github'].dark {
+  --background: #0d1117;
+  --foreground: #e6edf3;
+  --card: #161b22;
+  --card-foreground: #e6edf3;
+  --popover: #161b22;
+  --popover-foreground: #e6edf3;
+  --primary: #1f6feb;
+  --primary-foreground: #ffffff;
+  --secondary: #21262d;
+  --secondary-foreground: #e6edf3;
+  --muted: #21262d;
+  --muted-foreground: #cad3de;
+  --accent: #262c36;
+  --accent-foreground: #e6edf3;
+  --destructive: #ff6157;
+  --destructive-text: #fd9d92;
+  --warning: #e4aa3b;
+  --border: #30363d;
+  --input: #30363d;
+  --ring: #2171ed;
+  --chart-1: #4493f8;
+  --chart-2: #3fb950;
+  --chart-3: #d29922;
+  --chart-4: #ab7df8;
+  --chart-5: #db61a2;
+  --sidebar: #010409;
+  --sidebar-foreground: #e6edf3;
+  --sidebar-primary: #1f6feb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #13171c;
+  --sidebar-accent-foreground: #e6edf3;
+  --sidebar-border: #30363d;
+  --sidebar-ring: #2171ed;
+  --priority-low: #727a85;
+  --priority-medium: #d29922;
+  --priority-high: #db6d28;
+  --priority-urgent: #f85149;
+  --kanban-column: #010409;
+  --kanban-column-raised: #060a0f;
+  --kanban-column-wip-destructive: #1a0c0f;
+  --kanban-column-wip-warning: #12100b;
+  --kanban-card: #161b22;
+  --kanban-card-hover: #22282f;
+  --kanban-card-blocked: #2d2026;
+  --kanban-card-blocked-hover: #372c32;
+  --row-blocked: #19141a;
+  --row-blocked-hover: #22171c;
+  --kanban-card-selected: #182f52;
+}
+
+:root[data-palette='nord'] {
+  --background: #eceff4;
+  --foreground: #10151f;
+  --card: #f7f9fb;
+  --card-foreground: #10151f;
+  --popover: #f7f9fb;
+  --popover-foreground: #10151f;
+  --primary: #587ba6;
+  --primary-foreground: #ffffff;
+  --secondary: #e5e9f0;
+  --secondary-foreground: #10151f;
+  --muted: #e5e9f0;
+  --muted-foreground: #343e51;
+  --accent: #d8dee9;
+  --accent-foreground: #10151f;
+  --destructive: #bf616a;
+  --destructive-text: #9e434e;
+  --warning: #816423;
+  --border: #d8dee9;
+  --input: #bcc3d0;
+  --ring: #587ba6;
+  --chart-1: #5e81ac;
+  --chart-2: #a3be8c;
+  --chart-3: #ebcb8b;
+  --chart-4: #b48ead;
+  --chart-5: #8fbcbb;
+  --sidebar: #e5e9f0;
+  --sidebar-foreground: #10151f;
+  --sidebar-primary: #587ba6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #d6dae1;
+  --sidebar-accent-foreground: #10151f;
+  --sidebar-border: #d8dee9;
+  --sidebar-ring: #587ba6;
+  --priority-low: #767f90;
+  --priority-medium: #dcbc7d;
+  --priority-high: #d08770;
+  --priority-urgent: #bf616a;
+  --kanban-column: #dfe4ed;
+  --kanban-column-raised: #e5e9f0;
+  --kanban-column-wip-destructive: #dddbe4;
+  --kanban-column-wip-warning: #e0e2e3;
+  --kanban-card: #f7f9fb;
+  --kanban-card-hover: #eef0f2;
+  --kanban-card-blocked: #f4f0f2;
+  --kanban-card-blocked-hover: #ebe7ea;
+  --row-blocked: #eae8ed;
+  --row-blocked-hover: #e8e2e8;
+  --kanban-card-selected: #dee5ed;
+}
+
+:root[data-palette='nord'].dark {
+  --background: #2e3440;
+  --foreground: #eff2f7;
+  --card: #3b4252;
+  --card-foreground: #eff2f7;
+  --popover: #434c5e;
+  --popover-foreground: #eff2f7;
+  --primary: #a8e0f1;
+  --primary-foreground: #2e3440;
+  --secondary: #3b4252;
+  --secondary-foreground: #eff2f7;
+  --muted: #3b4252;
+  --muted-foreground: #dbe2f1;
+  --accent: #434c5e;
+  --accent-foreground: #eff2f7;
+  --destructive: #f7939b;
+  --destructive-text: #feb9bd;
+  --warning: #ebcb8b;
+  --border: #505a6c;
+  --input: #586377;
+  --ring: #a8e0f1;
+  --chart-1: #81a1c1;
+  --chart-2: #a3be8c;
+  --chart-3: #ebcb8b;
+  --chart-4: #b48ead;
+  --chart-5: #8fbcbb;
+  --sidebar: #242933;
+  --sidebar-foreground: #eff2f7;
+  --sidebar-primary: #a8e0f1;
+  --sidebar-primary-foreground: #2e3440;
+  --sidebar-accent: #343943;
+  --sidebar-accent-foreground: #eff2f7;
+  --sidebar-border: #505a6c;
+  --sidebar-ring: #a8e0f1;
+  --priority-low: #858e9f;
+  --priority-medium: #ebcb8b;
+  --priority-high: #d08770;
+  --priority-urgent: #ce6f77;
+  --kanban-column: #292e39;
+  --kanban-column-raised: #2b313c;
+  --kanban-column-wip-destructive: #38333e;
+  --kanban-column-wip-warning: #393b40;
+  --kanban-card: #3b4252;
+  --kanban-card-hover: #464d5c;
+  --kanban-card-blocked: #484554;
+  --kanban-card-blocked-hover: #524f5d;
+  --row-blocked: #353642;
+  --row-blocked-hover: #3b3844;
+  --kanban-card-selected: #556878;
+}
+
+:root[data-palette='catppuccin'] {
+  --background: #eff1f5;
+  --foreground: #1a1c32;
+  --card: #f9f9fb;
+  --card-foreground: #1a1c32;
+  --popover: #f9f9fb;
+  --popover-foreground: #1a1c32;
+  --primary: #802ce4;
+  --primary-foreground: #eff1f5;
+  --secondary: #e6e9ef;
+  --secondary-foreground: #1a1c32;
+  --muted: #e6e9ef;
+  --muted-foreground: #3d4056;
+  --accent: #dce0e8;
+  --accent-foreground: #1a1c32;
+  --destructive: #d20f39;
+  --destructive-text: #a20e2b;
+  --warning: #835002;
+  --border: #ccd0da;
+  --input: #bcc0cc;
+  --ring: #802ce4;
+  --chart-1: #1e66f5;
+  --chart-2: #40a02b;
+  --chart-3: #df8e1d;
+  --chart-4: #ea76cb;
+  --chart-5: #179299;
+  --sidebar: #e6e9ef;
+  --sidebar-foreground: #1a1c32;
+  --sidebar-primary: #802ce4;
+  --sidebar-primary-foreground: #eff1f5;
+  --sidebar-accent: #d8dbe2;
+  --sidebar-accent-foreground: #1a1c32;
+  --sidebar-border: #ccd0da;
+  --sidebar-ring: #802ce4;
+  --priority-low: #8c8fa1;
+  --priority-medium: #df8e1d;
+  --priority-high: #fe640b;
+  --priority-urgent: #d20f39;
+  --kanban-column: #dce0e8;
+  --kanban-column-raised: #e5e8ee;
+  --kanban-column-wip-destructive: #dbd1dc;
+  --kanban-column-wip-warning: #dcd8d4;
+  --kanban-card: #f9f9fb;
+  --kanban-card-hover: #f0f0f3;
+  --kanban-card-blocked: #f7ebef;
+  --kanban-card-blocked-hover: #eee3e8;
+  --row-blocked: #eee6ec;
+  --row-blocked-hover: #ecdde4;
+  --kanban-card-selected: #e6d8f7;
+}
+
+:root[data-palette='catppuccin'].dark {
+  --background: #1e1e2e;
+  --foreground: #dfe7fe;
+  --card: #282839;
+  --card-foreground: #dfe7fe;
+  --popover: #313244;
+  --popover-foreground: #dfe7fe;
+  --primary: #dbc1fd;
+  --primary-foreground: #11111b;
+  --secondary: #313244;
+  --secondary-foreground: #dfe7fe;
+  --muted: #313244;
+  --muted-foreground: #ced5f1;
+  --accent: #313244;
+  --accent-foreground: #dfe7fe;
+  --destructive: #f38ba8;
+  --destructive-text: #fca6bc;
+  --warning: #f9e2af;
+  --border: #3e3f52;
+  --input: #46485b;
+  --ring: #dbc1fd;
+  --chart-1: #89b4fa;
+  --chart-2: #a6e3a1;
+  --chart-3: #f9e2af;
+  --chart-4: #f5c2e7;
+  --chart-5: #94e2d5;
+  --sidebar: #11111b;
+  --sidebar-foreground: #dfe7fe;
+  --sidebar-primary: #dbc1fd;
+  --sidebar-primary-foreground: #11111b;
+  --sidebar-accent: #21222d;
+  --sidebar-accent-foreground: #dfe7fe;
+  --sidebar-border: #3e3f52;
+  --sidebar-ring: #dbc1fd;
+  --priority-low: #7f849c;
+  --priority-medium: #f9e2af;
+  --priority-high: #fab387;
+  --priority-urgent: #f38ba8;
+  --kanban-column: #181825;
+  --kanban-column-raised: #1b1b29;
+  --kanban-column-wip-destructive: #2e2432;
+  --kanban-column-wip-warning: #2a2830;
+  --kanban-card: #28293a;
+  --kanban-card-hover: #333446;
+  --kanban-card-blocked: #3c3345;
+  --kanban-card-blocked-hover: #463d50;
+  --row-blocked: #292334;
+  --row-blocked-hover: #312839;
+  --kanban-card-selected: #534d69;
+}
+
+:root[data-palette='one'] {
+  --background: #fafafa;
+  --foreground: #292b32;
+  --card: #ffffff;
+  --card-foreground: #292b32;
+  --popover: #ffffff;
+  --popover-foreground: #292b32;
+  --primary: #3a72eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f1;
+  --secondary-foreground: #292b32;
+  --muted: #f0f0f1;
+  --muted-foreground: #464953;
+  --accent: #e5e5e6;
+  --accent-foreground: #292b32;
+  --destructive: #ca1243;
+  --destructive-text: #ca1243;
+  --warning: #916200;
+  --border: #dbdbdc;
+  --input: #c9cacc;
+  --ring: #3a72eb;
+  --chart-1: #4078f2;
+  --chart-2: #50a14f;
+  --chart-3: #c18401;
+  --chart-4: #a626a4;
+  --chart-5: #0184bc;
+  --sidebar: #eaeaeb;
+  --sidebar-foreground: #292b32;
+  --sidebar-primary: #3a72eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dcddde;
+  --sidebar-accent-foreground: #292b32;
+  --sidebar-border: #dbdbdc;
+  --sidebar-ring: #3a72eb;
+  --priority-low: #a0a1a7;
+  --priority-medium: #c18401;
+  --priority-high: #986801;
+  --priority-urgent: #e45649;
+  --kanban-column: #efeff0;
+  --kanban-column-raised: #f4f4f5;
+  --kanban-column-wip-destructive: #eee4e4;
+  --kanban-column-wip-warning: #eae4d8;
+  --kanban-card: #ffffff;
+  --kanban-card-hover: #f6f7f7;
+  --kanban-card-blocked: #fdf5f4;
+  --kanban-card-blocked-hover: #f5eded;
+  --row-blocked: #f9f2f1;
+  --row-blocked-hover: #f8ebea;
+  --kanban-card-selected: #dfe8fc;
+}
+
+:root[data-palette='one'].dark {
+  --background: #282c34;
+  --foreground: #e3ebf8;
+  --card: #2c313a;
+  --card-foreground: #e3ebf8;
+  --popover: #353b45;
+  --popover-foreground: #e3ebf8;
+  --primary: #aed8fe;
+  --primary-foreground: #282c34;
+  --secondary: #2c313a;
+  --secondary-foreground: #e3ebf8;
+  --muted: #2c313a;
+  --muted-foreground: #d1d9e8;
+  --accent: #353b46;
+  --accent-foreground: #e3ebf8;
+  --destructive: #f68088;
+  --destructive-text: #fdacaf;
+  --warning: #e5c07b;
+  --border: #434855;
+  --input: #4b5263;
+  --ring: #aed8fe;
+  --chart-1: #61afef;
+  --chart-2: #98c379;
+  --chart-3: #e5c07b;
+  --chart-4: #c678dd;
+  --chart-5: #56b6c2;
+  --sidebar: #21252b;
+  --sidebar-foreground: #e3ebf8;
+  --sidebar-primary: #aed8fe;
+  --sidebar-primary-foreground: #282c34;
+  --sidebar-accent: #31353b;
+  --sidebar-accent-foreground: #e3ebf8;
+  --sidebar-border: #434855;
+  --sidebar-ring: #aed8fe;
+  --priority-low: #7f848e;
+  --priority-medium: #e5c07b;
+  --priority-high: #d19a66;
+  --priority-urgent: #e06c75;
+  --kanban-column: #21252b;
+  --kanban-column-raised: #24282f;
+  --kanban-column-wip-destructive: #342c32;
+  --kanban-column-wip-warning: #313131;
+  --kanban-card: #2c313a;
+  --kanban-card-hover: #373c45;
+  --kanban-card-blocked: #3e3740;
+  --kanban-card-blocked-hover: #48414a;
+  --row-blocked: #312f37;
+  --row-blocked-hover: #39323a;
+  --kanban-card-selected: #4b5969;
+}
+
+:root[data-palette='tomorrow'] {
+  --background: #fafafa;
+  --foreground: #262625;
+  --card: #ffffff;
+  --card-foreground: #262625;
+  --popover: #ffffff;
+  --popover-foreground: #262625;
+  --primary: #4271ae;
+  --primary-foreground: #ffffff;
+  --secondary: #efefef;
+  --secondary-foreground: #262625;
+  --muted: #efefef;
+  --muted-foreground: #454744;
+  --accent: #e3e3e3;
+  --accent-foreground: #262625;
+  --destructive: #c82829;
+  --destructive-text: #bc161e;
+  --warning: #82650b;
+  --border: #d6d6d6;
+  --input: #c4c5c4;
+  --ring: #4271ae;
+  --chart-1: #4271ae;
+  --chart-2: #718c00;
+  --chart-3: #eab700;
+  --chart-4: #8959a8;
+  --chart-5: #3e999f;
+  --sidebar: #efefef;
+  --sidebar-foreground: #262625;
+  --sidebar-primary: #4271ae;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e1e1e1;
+  --sidebar-accent-foreground: #262625;
+  --sidebar-border: #d6d6d6;
+  --sidebar-ring: #4271ae;
+  --priority-low: #8e908c;
+  --priority-medium: #eab700;
+  --priority-high: #f5871f;
+  --priority-urgent: #c82829;
+  --kanban-column: #e8e8e8;
+  --kanban-column-raised: #f0f0f0;
+  --kanban-column-wip-destructive: #e6dbdb;
+  --kanban-column-wip-warning: #e8e3d1;
+  --kanban-card: #ffffff;
+  --kanban-card-hover: #f6f6f6;
+  --kanban-card-blocked: #fcf2f2;
+  --kanban-card-blocked-hover: #f3eaea;
+  --row-blocked: #f8f0f0;
+  --row-blocked-hover: #f6e7e7;
+  --kanban-card-selected: #e1e8f2;
+}
+
+:root[data-palette='tomorrow'].dark {
+  --background: #1d1f21;
+  --foreground: #e7eae8;
+  --card: #282a2e;
+  --card-foreground: #e7eae8;
+  --popover: #373b41;
+  --popover-foreground: #e7eae8;
+  --primary: #5e7e98;
+  --primary-foreground: #ffffff;
+  --secondary: #282a2e;
+  --secondary-foreground: #e7eae8;
+  --muted: #282a2e;
+  --muted-foreground: #d7d9d7;
+  --accent: #373b41;
+  --accent-foreground: #e7eae8;
+  --destructive: #f08685;
+  --destructive-text: #fda8a6;
+  --warning: #f0c674;
+  --border: #454a50;
+  --input: #4d5057;
+  --ring: #5e7e98;
+  --chart-1: #81a2be;
+  --chart-2: #b5bd68;
+  --chart-3: #f0c674;
+  --chart-4: #b294bb;
+  --chart-5: #8abeb7;
+  --sidebar: #141617;
+  --sidebar-foreground: #e7eae8;
+  --sidebar-primary: #5e7e98;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #252728;
+  --sidebar-accent-foreground: #e7eae8;
+  --sidebar-border: #454a50;
+  --sidebar-ring: #5e7e98;
+  --priority-low: #969896;
+  --priority-medium: #f0c674;
+  --priority-high: #de935f;
+  --priority-urgent: #cc6666;
+  --kanban-column: #191a1c;
+  --kanban-column-raised: #1b1c1e;
+  --kanban-column-wip-destructive: #2b2223;
+  --kanban-column-wip-warning: #2a2823;
+  --kanban-card: #282a2e;
+  --kanban-card-hover: #333639;
+  --kanban-card-blocked: #383034;
+  --kanban-card-blocked-hover: #423b3e;
+  --row-blocked: #262324;
+  --row-blocked-hover: #2d2527;
+  --kanban-card-selected: #353e47;
+}
+
+:root[data-palette='nightfox'] {
+  --background: #f6f2ee;
+  --foreground: #220f3b;
+  --card: #fbf9f7;
+  --card-foreground: #220f3b;
+  --popover: #fbf9f7;
+  --popover-foreground: #220f3b;
+  --primary: #2848a9;
+  --primary-foreground: #f6f2ee;
+  --secondary: #ede7e1;
+  --secondary-foreground: #220f3b;
+  --muted: #ede7e1;
+  --muted-foreground: #473f38;
+  --accent: #e5dee2;
+  --accent-foreground: #220f3b;
+  --destructive: #a5222f;
+  --destructive-text: #a5222f;
+  --warning: #8e4505;
+  --border: #d3c7bb;
+  --input: #aab0ad;
+  --ring: #2848a9;
+  --chart-1: #2848a9;
+  --chart-2: #396847;
+  --chart-3: #ac5402;
+  --chart-4: #6e33ce;
+  --chart-5: #287980;
+  --sidebar: #ede7e1;
+  --sidebar-foreground: #220f3b;
+  --sidebar-primary: #2848a9;
+  --sidebar-primary-foreground: #f6f2ee;
+  --sidebar-accent: #dfd8d5;
+  --sidebar-accent-foreground: #220f3b;
+  --sidebar-border: #d3c7bb;
+  --sidebar-ring: #2848a9;
+  --priority-low: #837a72;
+  --priority-medium: #ac5402;
+  --priority-high: #955f61;
+  --priority-urgent: #a5222f;
+  --kanban-column: #e9e3dc;
+  --kanban-column-raised: #efeae4;
+  --kanban-column-wip-destructive: #e4d5d0;
+  --kanban-column-wip-warning: #e3d5c6;
+  --kanban-card: #fbf9f7;
+  --kanban-card-hover: #f2f0ef;
+  --kanban-card-blocked: #f6eceb;
+  --kanban-card-blocked-hover: #ede4e3;
+  --row-blocked: #f2e8e4;
+  --row-blocked-hover: #efdfdd;
+  --kanban-card-selected: #d9ddeb;
+}
+
+:root[data-palette='nightfox'].dark {
+  --background: #192330;
+  --foreground: #e9eaeb;
+  --card: #212e3f;
+  --card-foreground: #e9eaeb;
+  --popover: #29394f;
+  --popover-foreground: #e9eaeb;
+  --primary: #517ab2;
+  --primary-foreground: #ffffff;
+  --secondary: #212e3f;
+  --secondary-foreground: #e9eaeb;
+  --muted: #212e3f;
+  --muted-foreground: #d8d9da;
+  --accent: #29394f;
+  --accent-foreground: #e9eaeb;
+  --destructive: #fa7b96;
+  --destructive-text: #ffa8b7;
+  --warning: #dbc074;
+  --border: #37485e;
+  --input: #39506d;
+  --ring: #547db5;
+  --chart-1: #719cd6;
+  --chart-2: #81b29a;
+  --chart-3: #dbc074;
+  --chart-4: #9d79d6;
+  --chart-5: #63cdcf;
+  --sidebar: #131a24;
+  --sidebar-foreground: #e9eaeb;
+  --sidebar-primary: #517ab2;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #242b34;
+  --sidebar-accent-foreground: #e9eaeb;
+  --sidebar-border: #37485e;
+  --sidebar-ring: #547db5;
+  --priority-low: #748193;
+  --priority-medium: #dbc074;
+  --priority-high: #f4a261;
+  --priority-urgent: #d05573;
+  --kanban-column: #151e29;
+  --kanban-column-raised: #17202c;
+  --kanban-column-wip-destructive: #272330;
+  --kanban-column-wip-warning: #252b2f;
+  --kanban-card: #212e3f;
+  --kanban-card-hover: #2d3949;
+  --kanban-card-blocked: #323144;
+  --kanban-card-blocked-hover: #3d3b4d;
+  --row-blocked: #222533;
+  --row-blocked-hover: #292735;
+  --kanban-card-selected: #2d405b;
+}
+
+/* Every floating surface lifts off the page with the same shadow, and a border
+   fainter than the page's so it does not read as a bright outline. It is set here
+   rather than per component: the shadcn components are kept as generated, and
+   `shadow-md` on a popover reads as nothing against a background of nearly the
+   same lightness. These rules sit outside @layer, so they win over the utility. */
+[data-slot='dropdown-menu-content'],
+[data-slot='dropdown-menu-sub-content'],
+[data-slot='context-menu-content'],
+[data-slot='context-menu-sub-content'],
+[data-slot='select-content'],
+[data-slot='popover-content'],
+[data-slot='combobox-content'],
+[data-slot='tooltip-content'] {
+  box-shadow: var(--overlay-shadow);
+  border-color: color-mix(in oklab, var(--border) 55%, transparent);
+}
+
+/* A tooltip is never pointed at, so it must not take the pointer from what it
+   stands over. The rule sits on the popper wrapper, not on the tooltip itself: the
+   wrapper is the box that receives the events, and pointer-events is inherited. */
+[data-radix-popper-content-wrapper]:has(> [data-slot='tooltip-content']) {
+  pointer-events: none;
+}
+
+/* An alert states its kind by colour, and every place one appears already sits
+   inside a bordered surface. The generated component carries an unconditional
+   `border`, which reads as a box drawn inside a box. A caller that wants one back
+   sets both the width and the colour. */
+[data-slot='alert'] {
+  border-width: 0;
+}
+
+/* Dialogs and sheets cover a far larger area, so they carry a wider, deeper cast
+   than a menu. */
+[data-slot='dialog-content'],
+[data-slot='sheet-content'] {
+  box-shadow: var(--modal-shadow);
+}
+
+/* The composer's own box casts the shadow, not the row around it. Set here because
+   the input group is a generated component carrying a `shadow-xs` of its own, which
+   tailwind-merge does not drop for a `shadow-[var(…)]` utility — it reads that as a
+   shadow colour. */
+.chat-composer [data-slot='input-group'] {
+  box-shadow: var(--chat-composer-shadow);
+}
+
+/* The class the generated message scroller puts on its viewport, with no rule of
+   its own. A message the composer cuts at the bottom edge fades out there instead
+   of ending mid-glyph; the transcript's own bottom padding is deeper than the fade,
+   so the last message is whole once it is scrolled to. */
+.scroll-fade-b {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
+}
+
+/* Kanban card surface — it sits on --kanban-column, so it is lighter than the
+   column in both themes, and it changes its own background on hover instead of
+   highlighting the border. */
+.kanban-card {
+  background-color: var(--kanban-card);
+  transition: background-color 0.12s ease;
+}
+.kanban-card:hover {
+  background-color: var(--kanban-card-hover);
+}
+/* Held up by another issue: a rose tint at the card's own lightness. The 25° red of
+   --destructive would turn brown on the dark card. */
+.kanban-card-blocked {
+  background-color: var(--kanban-card-blocked);
+}
+.kanban-card-blocked:hover {
+  background-color: var(--kanban-card-blocked-hover);
+}
+
+/* The same reading for a table row, over the page background instead of a card. */
+.row-blocked {
+  background-color: var(--row-blocked);
+}
+.row-blocked:hover {
+  background-color: var(--row-blocked-hover);
+}
+/* Selected in the board multi-select: a blue-tinted card surface (Linear-style),
+   overriding the base and hover fills. */
+.kanban-card-selected,
+.kanban-card-selected:hover {
+  background-color: var(--kanban-card-selected);
+}
+
+/* Uniform thin scrollbar across the app. Native scrollbars are styled directly
+   rather than through a scroll-area component, so every scroll region — board
+   views, panels, menus — looks the same, and the virtualized views keep the
+   native overflow container that the react-virtual virtualizer, sticky headers
+   and dnd auto-scroll depend on. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-foreground);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+  html {
+    @apply font-sans;
+    font-feature-settings:
+      'cv05' 1,
+      'cv08' 1,
+      'zero' 1;
+  }
+}
+
+/* MarkdownEditor (Tiptap) content — no toolbar of its own, so the typography
+   has to read as plain text with light formatting, not a boxed widget. */
+.md-content {
+  font-size: var(--text-sm);
+  line-height: 1.857; /* 26px on the 4px grid */
+}
+/* Table cells hold short lines, where the body leading reads as too loose. */
+.md-content.text-xs {
+  line-height: 1.667;
+}
+.md-content > * + * {
+  margin-top: 1em;
+}
+/* A heading belongs to the text under it: more space above than below. */
+.md-content > * + :is(h1, h2, h3) {
+  margin-top: 1.75em;
+}
+.md-content > :is(h1, h2, h3) + * {
+  margin-top: 0.4em;
+}
+.md-content li + li {
+  margin-top: 0.25em;
+}
+/* Each written block reads in the script it was typed in, so a paragraph of Arabic
+   and one of English can sit in the same description. The direction is set per
+   block rather than on the editor: `auto` on the root reads only the first
+   paragraph, and an empty editor gives it nothing to read, which would resolve to
+   left-to-right and take the placeholder with it. An empty block is left out for
+   that reason — it follows the page instead. */
+.md-content > :is(p, h1, h2, h3, li, blockquote):not(.is-editor-empty) {
+  unicode-bidi: plaintext;
+}
+.md-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  float: inline-start;
+  height: 0;
+  pointer-events: none;
+}
+.md-content h1,
+.md-content h2,
+.md-content h3 {
+  font-weight: 600;
+  line-height: 1.25;
+}
+.md-content h1 {
+  font-size: 1.25em;
+}
+.md-content h2 {
+  font-size: 1.125em;
+}
+.md-content h3 {
+  font-size: 1em;
+}
+.md-content a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* A link on a public share page that needs a session (features/documents/utils/sharedLinks). */
+.md-content a.share-link-locked {
+  color: var(--muted-foreground);
+}
+.md-content a.share-link-locked::after {
+  content: '';
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-inline-start: 0.2em;
+  vertical-align: -0.05em;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+/* Mention chips: an @username in the text is rendered as its own node (see
+   lib/tiptap-mention.ts) and styled as a pill. */
+.md-content .mention {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  border-radius: 0.375em;
+  padding: 0.05em 0.35em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.md-content .mention.mention-self {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--warning) 45%, transparent);
+}
+a.issue-ref,
+span.issue-ref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  max-width: 100%;
+  vertical-align: baseline;
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  border-radius: 0.375em;
+  padding: 0.05em 0.35em;
+  font-weight: 500;
+  line-height: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.md-content a.issue-ref {
+  text-decoration: none;
+}
+span.issue-ref {
+  cursor: default;
+}
+.issue-ref-dot {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 9999px;
+  flex: none;
+  align-self: center;
+}
+.issue-ref-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16em;
+  font-weight: 400;
+  color: var(--foreground);
+}
+.md-content .issue-ref-source {
+  font-size: 0;
+  line-height: 0;
+}
+.md-content code {
+  background: var(--muted);
+  border-radius: 0.25em;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+/* Source code reads left to right whatever the interface language is, so a code
+   block keeps its direction inside a mirrored page. */
+.md-content pre {
+  background: var(--muted);
+  border-radius: var(--radius-md);
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+  direction: ltr;
+  text-align: start;
+}
+.md-content pre code {
+  background: none;
+  padding: 0;
+}
+/* Token colors for the hljs-* classes lowlight emits, taken from highlight.js's
+   GitHub light and dark themes. Their background and base text color are dropped:
+   the block already gets them from .md-content pre above. */
+.md-content {
+  --hljs-keyword: #d73a49;
+  --hljs-title: #6f42c1;
+  --hljs-attr: #005cc5;
+  --hljs-string: #032f62;
+  --hljs-built-in: #e36209;
+  --hljs-comment: #6a737d;
+  --hljs-name: #22863a;
+  --hljs-section: #005cc5;
+  --hljs-bullet: #735c0f;
+  --hljs-addition: #22863a;
+  --hljs-addition-bg: #f0fff4;
+  --hljs-deletion: #b31d28;
+  --hljs-deletion-bg: #ffeef0;
+}
+.dark .md-content {
+  --hljs-keyword: #ff7b72;
+  --hljs-title: #d2a8ff;
+  --hljs-attr: #79c0ff;
+  --hljs-string: #a5d6ff;
+  --hljs-built-in: #ffa657;
+  --hljs-comment: #8b949e;
+  --hljs-name: #7ee787;
+  --hljs-section: #1f6feb;
+  --hljs-bullet: #f2cc60;
+  --hljs-addition: #aff5b4;
+  --hljs-addition-bg: #033a16;
+  --hljs-deletion: #ffdcd7;
+  --hljs-deletion-bg: #67060c;
+}
+.md-content .hljs-doctag,
+.md-content .hljs-keyword,
+.md-content .hljs-meta .hljs-keyword,
+.md-content .hljs-template-tag,
+.md-content .hljs-template-variable,
+.md-content .hljs-type,
+.md-content .hljs-variable.language_ {
+  color: var(--hljs-keyword);
+}
+.md-content .hljs-title {
+  color: var(--hljs-title);
+}
+.md-content .hljs-attr,
+.md-content .hljs-attribute,
+.md-content .hljs-literal,
+.md-content .hljs-meta,
+.md-content .hljs-number,
+.md-content .hljs-operator,
+.md-content .hljs-selector-attr,
+.md-content .hljs-selector-class,
+.md-content .hljs-selector-id,
+.md-content .hljs-variable {
+  color: var(--hljs-attr);
+}
+.md-content .hljs-meta .hljs-string,
+.md-content .hljs-regexp,
+.md-content .hljs-string {
+  color: var(--hljs-string);
+}
+.md-content .hljs-built_in,
+.md-content .hljs-symbol {
+  color: var(--hljs-built-in);
+}
+.md-content .hljs-code,
+.md-content .hljs-comment,
+.md-content .hljs-formula {
+  color: var(--hljs-comment);
+}
+.md-content .hljs-name,
+.md-content .hljs-quote,
+.md-content .hljs-selector-pseudo,
+.md-content .hljs-selector-tag {
+  color: var(--hljs-name);
+}
+.md-content .hljs-section {
+  color: var(--hljs-section);
+  font-weight: 700;
+}
+.md-content .hljs-bullet {
+  color: var(--hljs-bullet);
+}
+.md-content .hljs-emphasis {
+  font-style: italic;
+}
+.md-content .hljs-strong {
+  font-weight: 700;
+}
+.md-content .hljs-addition {
+  color: var(--hljs-addition);
+  background-color: var(--hljs-addition-bg);
+}
+.md-content .hljs-deletion {
+  color: var(--hljs-deletion);
+  background-color: var(--hljs-deletion-bg);
+}
+.md-content blockquote {
+  border-inline-start: 2px solid var(--border);
+  padding-inline-start: 0.75em;
+  color: var(--muted-foreground);
+}
+.md-content ul,
+.md-content ol {
+  padding-inline-start: 1.25em;
+}
+.md-content ul {
+  list-style: disc;
+}
+.md-content ol {
+  list-style: decimal;
+}
+/* Task lists render a checkbox per item, not a bullet — drop the list marker and
+   lay each item out as [checkbox] [text]. */
+.md-content ul[data-type='taskList'] {
+  list-style: none;
+  padding-inline-start: 0;
+}
+.md-content ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+.md-content ul[data-type='taskList'] li > label {
+  margin-top: 0.2em;
+}
+.md-content ul[data-type='taskList'] input[type='checkbox'] {
+  cursor: pointer;
+}
+.md-content[contenteditable='false'] ul[data-type='taskList'] li > label,
+.md-content[contenteditable='false'] ul[data-type='taskList'] input[type='checkbox'] {
+  cursor: default;
+  pointer-events: none;
+}
+.md-content table {
+  border-collapse: collapse;
+}
+/* A table keeps its column widths and scrolls on its own instead of squeezing the
+   columns into the width it is given. Rendered markdown puts the table straight into
+   the content; the editor wraps it in a div of its own. */
+.md-content > table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.md-content .tableWrapper {
+  overflow-x: auto;
+}
+/* A cell being typed into is empty for a moment; a column collapsed to nothing has
+   no place to click. */
+.md-content .tableWrapper :is(th, td) {
+  min-width: 4em;
+}
+.md-content .selectedCell {
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+}
+.md-content :is(th, td) {
+  border: 1px solid var(--border);
+  padding: 0.35em 0.6em;
+  text-align: start;
+}
+.md-content th {
+  background: var(--muted);
+  font-weight: 600;
+}
+/* A gradient direction toward the end of the line, which `linear-gradient` has no
+   logical keyword for. The timelines draw their day lines with it. */
+:root {
+  --to-inline-end: to right;
+}
+[dir='rtl'] {
+  --to-inline-end: to left;
+}
+/* Right-to-left corrections for the shadcn primitives, applied from the outside for
+   the same reason as the shadows above: the generated components are kept as shadcn
+   writes them, so an edit inside one is lost the next time it is re-added.
+
+   These rules also have to sit outside @layer. Tailwind v4 orders its layers
+   `theme, base, components, utilities`, so a rule in `@layer components` loses to
+   the utility classes on the element however specific it is. */
+[dir='rtl'] [data-slot='dialog-close'],
+[dir='rtl'] [data-slot='sheet-close'] {
+  right: auto;
+  inset-inline-end: calc(var(--spacing) * 4);
+}
+/* `translate-x` has no logical form, so the checked position is mirrored
+   explicitly: the thumb travels towards the end of the track either way. */
+[dir='rtl'] [data-slot='switch-thumb'][data-state='checked'] {
+  --tw-translate-x: calc(-1 * (100% - 2px));
+  translate: var(--tw-translate-x) var(--tw-translate-y);
+}
+/* The inset variant butts the main panel against the sidebar, so it drops the margin
+   on the sidebar's side and puts it back once the sidebar collapses. Upstream does
+   that with `ml-0` / `collapsed:ml-2`; mirrored, the side to drop is the right one.
+   Stated physically because the upstream declaration is physical too, and a logical
+   property here would resolve to the same side and fight it. */
+@media (width >= 48rem) {
+  [dir='rtl'] [data-slot='sidebar-inset']:is(:where(.peer)[data-variant='inset'] ~ *) {
+    margin-left: calc(var(--spacing) * 2);
+    margin-right: 0;
+  }
+  [dir='rtl']
+    [data-slot='sidebar-inset']:is(:where(.peer)[data-variant='inset'] ~ *):is(
+      :where(.peer)[data-state='collapsed'] ~ *
+    ) {
+    margin-right: calc(var(--spacing) * 2);
+  }
+}
+/* The trigger icon shows a panel against the edge the sidebar sits on. */
+[dir='rtl'] [data-slot='sidebar-trigger'] svg {
+  rotate: 180deg;
+}
+
+/* xyflow sets `direction: ltr` on its own root, which it needs for the coordinate
+   math behind panning and zooming, and every note inherited it. A note's content is
+   prose, so it takes the page direction back; the canvas keeps its own, since a note
+   is placed by stored coordinates and moved with a transform.
+
+   Selected through the attribute rather than `inherit`: xyflow's stylesheet is
+   imported from the canvas component, so it lands after this file and wins on
+   source order against a single class. */
+[dir='rtl'] .sticker-note {
+  direction: rtl;
+}
+/* Sticky notes always sit on a light pastel background, so their placeholder,
+   checkboxes and links are keyed to dark regardless of the app theme. */
+.sticker-note .md-content p.is-editor-empty:first-child::before {
+  color: rgba(0, 0, 0, 0.4);
+}
+.sticker-note .md-content ul[data-type='taskList'] input[type='checkbox'] {
+  accent-color: #000;
+}
+.sticker-note .md-content a[href]:not([href='']) {
+  color: var(--color-blue-800);
+  cursor: pointer;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+.sticker-note .md-content a[href]:not([href='']):hover {
+  color: var(--color-blue-950);
+  background-color: color-mix(in oklab, var(--color-blue-800) 10%, transparent);
+}
+.sticker-note .md-content a[href]:not([href='']):focus-visible {
+  border-radius: 2px;
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+/* React Flow's default edge stroke is too dark on the canvas in both themes. */
+.react-flow__edge-path,
+.react-flow__connection-path {
+  stroke: var(--muted-foreground);
+  stroke-width: 1.5;
+}
+/* Tailwind's preflight makes every image a block, which stacks a row of them — the
+   contributor avatars in the release notes — one per line. */
+.md-content img {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+}
+
+/* react-grid-layout: base positioning plus theming to match the app (no card
+   box; a subtle placeholder and a quiet corner resize handle). */
+.react-grid-layout {
+  position: relative;
+  transition: height 200ms ease;
+}
+.react-grid-item {
+  transition: all 200ms ease;
+  transition-property: left, top, width, height;
+}
+.react-grid-item.cssTransforms {
+  transition-property: transform, width, height;
+}
+.react-grid-item.resizing {
+  transition: none;
+  z-index: 1;
+  will-change: width, height;
+}
+.react-grid-item.react-draggable-dragging {
+  transition: none;
+  z-index: 3;
+  will-change: transform;
+}
+.react-grid-item.dropping {
+  visibility: hidden;
+}
+.react-grid-item.react-grid-placeholder {
+  background: var(--accent);
+  opacity: 0.6;
+  border-radius: var(--radius-md);
+  transition-duration: 100ms;
+  z-index: 2;
+  user-select: none;
+}
+.react-grid-item > .react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.react-grid-item:hover > .react-resizable-handle {
+  opacity: 1;
+}
+/* When resizing is disabled (view mode), react-grid-layout tags the item with
+   this class; hide the handle so nothing edit-related shows outside edit mode. */
+.react-grid-item.react-resizable-hide > .react-resizable-handle {
+  display: none;
+}
+.react-grid-item > .react-resizable-handle::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted-foreground);
+  border-bottom: 2px solid var(--muted-foreground);
+  border-bottom-right-radius: 2px;
+}
+
+/* Shimmer text utility (shadcn `shimmer`): a highlight sweeps across the text,
+   used on the agent-chat status marker while the agent is working. */
+@utility shimmer {
+  color: transparent;
+  background-clip: text;
+  -webkit-background-clip: text;
+  background-image: linear-gradient(
+    90deg,
+    var(--color-muted-foreground) 0%,
+    var(--color-muted-foreground) 40%,
+    var(--color-foreground) 50%,
+    var(--color-muted-foreground) 60%,
+    var(--color-muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  animation: tw-shimmer 1.5s linear infinite;
+}
+
+@keyframes tw-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.md-content [id^='block-']:target {
+  outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 6px;
+  border-radius: 4px;
+  scroll-margin-top: 5rem;
+}
+.document-issue-link {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  padding: 1px 5px;
+  text-decoration: none;
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+.document-comment-mark {
+  background-color: color-mix(in oklch, var(--primary) 12%, transparent);
+  border-bottom: 2px solid color-mix(in oklch, var(--primary) 45%, transparent);
+  cursor: pointer;
+}
+.document-comment-mark:hover {
+  background-color: color-mix(in oklch, var(--primary) 22%, transparent);
+}

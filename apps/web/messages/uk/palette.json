@@ -1,0 +1,18 @@
+{
+  "placeholder": "Введіть команду або пошуковий запит…",
+  "noResults": "Нічого не знайдено.",
+  "issues": "Задачі",
+  "otherProjectIssues": "Задачі в інших проєктах",
+  "searchScope": "Область пошуку",
+  "scopeCurrent": "Цей проєкт",
+  "scopeAll": "Усі проєкти",
+  "searching": "Пошук…",
+  "selectAllIssues": "Вибрати всі задачі",
+  "newIssue": "Нова задача",
+  "newInitiative": "Нова ініціатива",
+  "newProject": "Новий проєкт",
+  "toggleChat": "Показати або сховати ШІ-чат",
+  "board": "Дошка",
+  "commands": "Команди",
+  "switchProject": "Змінити проєкт"
+}

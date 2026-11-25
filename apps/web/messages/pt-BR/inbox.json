@@ -1,0 +1,40 @@
+{
+  "title": "Caixa de entrada",
+  "empty": "Nenhuma notificação",
+  "selectNotification": "Selecione uma notificação",
+  "backToList": "Caixa de entrada",
+  "filter": "Filtro",
+  "display": "Exibição",
+  "notificationType": "Tipo de notificação",
+  "showRead": "Mostrar lidas",
+  "showSnoozed": "Mostrar adiadas",
+  "markAllRead": "Marcar todas como lidas",
+  "deleteAllRead": "Excluir todas as lidas",
+  "deleteAllCompleted": "Excluir notificações de issues concluídas",
+  "deleteAllCompletedDescription": "As notificações de issues concluídas ou canceladas que correspondem aos filtros atuais, incluindo as não lidas, serão excluídas. Esta ação não pode ser desfeita.",
+  "types": {
+    "assigned": "Atribuído",
+    "mentioned": "Mencionado",
+    "commented": "Comentado",
+    "state_changed": "Status alterado",
+    "reacted": "Reação"
+  },
+  "actions": {
+    "markRead": "Marcar como lida",
+    "markUnread": "Marcar como não lida",
+    "snooze": "Adiar",
+    "unsnooze": "Desfazer adiamento",
+    "tomorrow": "Amanhã",
+    "inAWeek": "Em uma semana",
+    "pickDate": "Escolha uma data…"
+  },
+  "event": {
+    "someone": "Alguém",
+    "assigned": "{who} atribuiu a issue a você",
+    "mentioned": "{who} mencionou você",
+    "commented": "{who} comentou",
+    "stateChanged": "{who} alterou o status de {from} para {to}",
+    "stateChangedPlain": "{who} alterou o status",
+    "reacted": "{who} reagiu ao seu comentário com {emoji}"
+  }
+}

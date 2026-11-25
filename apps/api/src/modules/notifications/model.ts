@@ -1,0 +1,95 @@
+import { t } from 'elysia';
+
+export const notificationParams = t.Object({ id: t.Numeric() });
+
+const NotificationResponse = t.Object({
+  id: t.Number(),
+  type: t.String(),
+  actorUserId: t.Nullable(t.String()),
+  actorName: t.Nullable(t.String()),
+  readAt: t.Nullable(t.String()),
+  snoozedUntil: t.Nullable(t.String()),
+  createdAt: t.String(),
+  issueId: t.Nullable(t.Number()),
+  issueSeq: t.Nullable(t.Number()),
+  issueTitle: t.Nullable(t.String()),
+  issueStateType: t.Nullable(t.String()),
+  issueCommentId: t.Nullable(t.Number()),
+  documentId: t.Nullable(t.Number()),
+  documentTitle: t.Nullable(t.String()),
+  documentIcon: t.Nullable(t.String()),
+  documentCommentId: t.Nullable(t.String()),
+  projectId: t.Number(),
+  projectKey: t.String(),
+  projectName: t.String(),
+  fromState: t.Nullable(t.String()),
+  toState: t.Nullable(t.String()),
+  reactionEmoji: t.Nullable(t.String()),
+});
+
+export const NotificationPageResponse = t.Object({
+  items: t.Array(NotificationResponse),
+  nextCursor: t.Nullable(t.Object({ ts: t.String(), id: t.Number() })),
+});
+
+export const UnreadCountResponse = t.Object({ unread: t.Number() });
+
+// How many rows the bulk read-all and delete routes touched.
+export const AffectedCountResponse = t.Object({ count: t.Number() });
+
+export const listNotificationsQuery = t.Object({
+  limit: t.Optional(t.String({ description: '1-100. Default 30.' })),
+  cursor: t.Optional(t.String({ description: 'nextCursor from the previous page.' })),
+  types: t.Optional(t.String({ description: 'Comma-separated notification types.' })),
+  from: t.Optional(t.String({ description: 'Actor user id.' })),
+  projectId: t.Optional(t.String()),
+  includeRead: t.Optional(t.String({ description: "'false' hides read. Default true." })),
+  includeSnoozed: t.Optional(t.String({ description: "'true' shows snoozed. Default false." })),
+});
+
+export const unreadCountQuery = t.Object({
+  projectId: t.Optional(t.String({ description: 'Scope the count to one project.' })),
+});
+
+export const markAllReadBody = t.Optional(
+  t.Object({
+    projectId: t.Optional(t.Number()),
+    types: t.Optional(
+      t.Array(
+        t.Union([
+          t.Literal('assigned'),
+          t.Literal('mentioned'),
+          t.Literal('commented'),
+          t.Literal('state_changed'),
+          t.Literal('reacted'),
+        ]),
+        { minItems: 1 },
+      ),
+    ),
+    from: t.Optional(t.String()),
+    includeRead: t.Optional(t.Boolean()),
+    includeSnoozed: t.Optional(t.Boolean()),
+  }),
+);
+
+export const deleteNotificationsQuery = t.Object({
+  scope: t.Optional(
+    t.Union(
+      [t.Literal('all'), t.Literal('read'), t.Literal('read-completed'), t.Literal('completed')],
+      {
+        description:
+          'Which notifications to delete. Default read. completed deletes read and unread ' +
+          'notifications on completed or canceled issues; read-completed keeps only read ones.',
+      },
+    ),
+  ),
+  projectId: t.Optional(t.String({ description: 'Scope the delete to one project.' })),
+  types: t.Optional(t.String()),
+  from: t.Optional(t.String()),
+  includeRead: t.Optional(t.String()),
+  includeSnoozed: t.Optional(t.String()),
+});
+
+export const setNotificationReadBody = t.Optional(t.Object({ read: t.Optional(t.Boolean()) }));
+
+export const snoozeNotificationBody = t.Object({ until: t.Nullable(t.String()) });

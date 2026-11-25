@@ -1,0 +1,62 @@
+import { t } from 'elysia';
+import { LOCALES } from '@repo/mailer';
+import { HotkeyCombosSchema } from '#modules/settings/model';
+import { PALETTES } from './service';
+
+// t.UnionEnum defaults to its first value, which would reset the language on a patch that
+// leaves it out.
+const Locale = t.UnionEnum([...LOCALES], { default: undefined });
+const Theme = t.Union([t.Literal('light'), t.Literal('dark'), t.Literal('system')]);
+const Palette = t.UnionEnum([...PALETTES], { default: undefined });
+// Lowercase only: the web app puts the colors in a cookie the server reads as written.
+const Hex = t.String({ pattern: '^#[0-9a-f]{6}$' });
+const CustomTheme = t.Object({
+  accent: Hex,
+  background: Hex,
+  contrast: t.Integer({ minimum: 0, maximum: 100 }),
+});
+const IssueOpenMode = t.Union([t.Literal('panel'), t.Literal('page')]);
+const StartPage = t.Union([
+  t.Literal('inbox'),
+  t.Literal('dashboard'),
+  t.Literal('work-items'),
+  t.Literal('initiatives'),
+]);
+const IssueStatsView = t.Union([t.Literal('compact'), t.Literal('timeline')]);
+const IssueActivityView = t.Union([t.Literal('flat'), t.Literal('grouped')]);
+
+export const PreferenceResponse = t.Object({
+  timezone: t.String(),
+  locale: Locale,
+  theme: Theme,
+  palette: Palette,
+  customTheme: t.Nullable(CustomTheme),
+  issueOpenMode: IssueOpenMode,
+  startPage: StartPage,
+  showChatByDefault: t.Boolean(),
+  issueStatsOpen: t.Boolean(),
+  issueStatsView: IssueStatsView,
+  issueActivityView: IssueActivityView,
+  autoWatch: t.Boolean(),
+  onboardingSeen: t.Boolean(),
+  lastProjectId: t.Nullable(t.Number()),
+  hotkeys: HotkeyCombosSchema,
+});
+
+export const PreferencePatch = t.Object({
+  timezone: t.Optional(t.String({ minLength: 1, maxLength: 64 })),
+  locale: t.Optional(Locale),
+  theme: t.Optional(Theme),
+  palette: t.Optional(Palette),
+  customTheme: t.Optional(t.Nullable(CustomTheme)),
+  issueOpenMode: t.Optional(IssueOpenMode),
+  startPage: t.Optional(StartPage),
+  showChatByDefault: t.Optional(t.Boolean()),
+  issueStatsOpen: t.Optional(t.Boolean()),
+  issueStatsView: t.Optional(IssueStatsView),
+  issueActivityView: t.Optional(IssueActivityView),
+  autoWatch: t.Optional(t.Boolean()),
+  onboardingSeen: t.Optional(t.Boolean()),
+  lastProjectId: t.Optional(t.Nullable(t.Number())),
+  hotkeys: t.Optional(HotkeyCombosSchema),
+});

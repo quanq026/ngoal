@@ -1,0 +1,270 @@
+import { startOfDay } from 'date-fns';
+import type { CustomField } from '@/lib/api/endpoints/customFields';
+import type { ProjectDetail } from '@/lib/api/endpoints/projects';
+import type { BoardIssue, Issue } from '@/lib/api/endpoints/issues';
+import { parseDate } from '@/utils/dates';
+import type { FilterSet } from '@/utils/filters';
+import { buildDayTrack, type DayTrack } from '@/utils/timelineTrack';
+import {
+  buildGroups,
+  groupIssues,
+  mergeAssign,
+  nestIssues,
+  sortIssues,
+  subgroupKey,
+  type GroupAssign,
+  type GroupLabels,
+  type IssueGroup,
+} from '@/utils/project';
+import type { Sort } from '@/utils/viewTypes';
+import {
+  isTimelineField,
+  type GroupField,
+  type PropertyKey,
+  type TimelineScale,
+} from '@/utils/viewSettings';
+import { columnFloor, orderedColumns, type OrderedColumn } from './table';
+
+// px per day at each zoom level. Wider days keep the per-day numbers legible;
+// narrower days fit longer ranges and fall back to weekly gridlines.
+export const SCALE_DAY_W: Record<TimelineScale, number> = { week: 32, month: 12, quarter: 5 };
+export const ROW_H = 36; // px, an issue row
+// Narrower bars show no title: a few cut letters say nothing, and the label column
+// beside the track already names the issue.
+export const MIN_TITLED_BAR_W = 64;
+export const LINK_ROW_H = 26; // px, a linked-issue sub-row under an issue row
+export const GROUP_H = 32; // px, a state group header row
+export const SUBGROUP_H = 28; // px, a sub-group header row under a group
+export const ADD_H = 28; // px, the add row that ends a section
+
+// The dragged label-column width is a client-only preference, kept per project
+// and per saved view (the tab the timeline is open on), so each of them keeps the
+// room its titles need. `null` is the project's unsaved "All" tab.
+export function labelWidthKey(projectKey: string, viewId: number | null): string {
+  return `timeline-label-width:${projectKey}:${viewId ?? 'all'}`;
+}
+
+export interface TimelineColumn {
+  column: OrderedColumn;
+  width: number;
+}
+const CELL_PADDING = 12; // px-1.5 on both sides of a cell
+
+// The Table shows the assignee and the delegate as avatars only. The Timeline names
+// them, as it does a member field, so their columns get a member field's width.
+const isPersonColumn = (c: OrderedColumn): boolean =>
+  c.kind === 'builtin' && (c.col === 'assignee' || c.col === 'delegate');
+const PERSON_COLUMN_WIDTH = 120;
+
+// The property columns a row shows after its title, in the display's order. The
+// identifier, a text or markdown field and a stale key are left out.
+export function timelineColumns(
+  properties: PropertyKey[],
+  customFields: CustomField[],
+): TimelineColumn[] {
+  return orderedColumns(properties, customFields.filter(isTimelineField)).map((column) => ({
+    column,
+    width: (isPersonColumn(column) ? PERSON_COLUMN_WIDTH : columnFloor(column)) + CELL_PADDING,
+  }));
+}
+
+// An issue's bar span. Effective start is its start date, or its creation date
+// when no start date is set (inferredStart) — normal Gantt practice so every
+// issue has a bar. Effective end is the due date, or the start when there is
+// no due date (a single-day marker).
+export interface Span {
+  start: Date;
+  end: Date;
+  inferredStart: boolean;
+}
+
+export function effSpan(issue: Issue): Span {
+  const created = startOfDay(new Date(issue.createdAt));
+  const startRaw = parseDate(issue.startDate);
+  const dueRaw = parseDate(issue.dueDate);
+  let start = startRaw ?? created;
+  const end = dueRaw ?? start;
+  if (end < start) start = end; // a due date before the start collapses the bar to a single day
+  return { start, end, inferredStart: startRaw == null };
+}
+
+// A flat render list so the left labels and the right tracks share the exact
+// same row order and heights: one entry per group header, its sub-group headers
+// when sub-grouped, then the issues. `assign` is the patch a drop onto the row
+// applies, `bucket` the ordered issue list the drop position is measured against,
+// and `index` the row's place in it — the same shape the table rows carry.
+export type TimelineRow =
+  | {
+      kind: 'group';
+      group: IssueGroup;
+      count: number;
+      collapsed: boolean;
+      aggregateSpan: Span | null;
+      assign: GroupAssign | null;
+      bucket: BoardIssue[];
+    }
+  | {
+      kind: 'subgroup';
+      sub: IssueGroup;
+      groupKey: string;
+      count: number;
+      collapsed: boolean;
+      aggregateSpan: Span | null;
+      assign: GroupAssign | null;
+      bucket: BoardIssue[];
+    }
+  | {
+      kind: 'issue';
+      issue: BoardIssue;
+      span: Span;
+      index: number;
+      assign: GroupAssign | null;
+      bucket: BoardIssue[];
+    }
+  // The last row of an expanded section: creates an issue in it. `key` is the
+  // section's key.
+  | { kind: 'add'; key: string; assign: GroupAssign | null };
+
+// The span covering a section's bars, shown on its header row when collapsed.
+function sectionSpan(issueRows: { span: Span }[]): Span | null {
+  let start: Date | null = null;
+  let end: Date | null = null;
+  for (const { span } of issueRows) {
+    if (!start || span.start < start) start = span.start;
+    if (!end || span.end > end) end = span.end;
+  }
+  if (!start || !end) return null;
+  return { start, end, inferredStart: false };
+}
+
+// The whole timeline layout derived from the project and the current viewport:
+// the flattened rows plus the day track they are placed on.
+export interface TimelineModel extends DayTrack {
+  rows: TimelineRow[];
+}
+
+export function buildTimeline({
+  project,
+  filters,
+  group,
+  subgroup,
+  sort,
+  groupLabels,
+  showEmptyGroups,
+  collapsedGroups,
+  canAddTo,
+  viewportW,
+  labelW,
+  dayW,
+}: {
+  project: ProjectDetail;
+  filters: FilterSet;
+  group: GroupField;
+  subgroup: GroupField;
+  sort: Sort;
+  groupLabels: GroupLabels;
+  showEmptyGroups: boolean;
+  collapsedGroups: Set<string>;
+  // An expanded section ends with an add row when this accepts its assign. A
+  // section with no assign (a finished cycle) has no add row.
+  canAddTo: (assign: GroupAssign | null) => boolean;
+  viewportW: number;
+  labelW: number;
+  dayW: number;
+}): TimelineModel {
+  const sorted = sortIssues(project.issues, sort, project);
+  const groups = buildGroups(project, group, groupLabels, filters);
+  const subgrouped = group !== 'none' && subgroup !== 'none';
+  const subGroups = subgrouped ? buildGroups(project, subgroup, groupLabels, filters) : [];
+  const rows: TimelineRow[] = [];
+
+  const spanned = (issues: BoardIssue[]) =>
+    issues.map((issue) => ({ issue, span: effSpan(issue) }));
+
+  if (!subgrouped) {
+    const issuesByGroup = groupIssues(groups, sorted, group);
+    for (const issueGroup of groups) {
+      const bucket = issuesByGroup.get(issueGroup.key) ?? [];
+      const issueRows = spanned(bucket);
+      if (!showEmptyGroups && issueRows.length === 0) continue;
+      const collapsed = collapsedGroups.has(issueGroup.key);
+      rows.push({
+        kind: 'group',
+        group: issueGroup,
+        count: issueRows.length,
+        collapsed,
+        aggregateSpan: sectionSpan(issueRows),
+        assign: issueGroup.assign,
+        bucket,
+      });
+      if (collapsed) continue;
+      issueRows.forEach(({ issue, span }, index) => {
+        rows.push({ kind: 'issue', issue, span, index, assign: issueGroup.assign, bucket });
+      });
+      // The single group of an ungrouped timeline has no assign and takes any issue.
+      if ((group === 'none' || issueGroup.assign) && canAddTo(issueGroup.assign)) {
+        rows.push({ kind: 'add', key: issueGroup.key, assign: issueGroup.assign });
+      }
+    }
+  } else {
+    const nested = nestIssues(groups, subGroups, sorted, group, subgroup);
+    for (const issueGroup of groups) {
+      const inner = nested.get(issueGroup.key)!;
+      const bySub = subGroups.map((sub) => ({ sub, issueRows: spanned(inner.get(sub.key) ?? []) }));
+      const count = bySub.reduce((sum, s) => sum + s.issueRows.length, 0);
+      if (!showEmptyGroups && count === 0) continue;
+      const collapsed = collapsedGroups.has(issueGroup.key);
+      rows.push({
+        kind: 'group',
+        group: issueGroup,
+        count,
+        collapsed,
+        aggregateSpan: sectionSpan(bySub.flatMap((s) => s.issueRows)),
+        assign: issueGroup.assign,
+        // Appending to a collapsed group lands after its last issue whichever
+        // sub-group that one sits in, so the bucket is the whole group in
+        // position order.
+        bucket: subGroups
+          .flatMap((sub) => inner.get(sub.key) ?? [])
+          .sort((a, b) => a.position - b.position),
+      });
+      if (collapsed) continue;
+      for (const { sub, issueRows } of bySub) {
+        if (!showEmptyGroups && issueRows.length === 0) continue;
+        const key = subgroupKey(issueGroup.key, sub.key);
+        const subCollapsed = collapsedGroups.has(key);
+        const assign = mergeAssign(issueGroup.assign, sub.assign);
+        const bucket = issueRows.map((r) => r.issue);
+        rows.push({
+          kind: 'subgroup',
+          sub,
+          groupKey: key,
+          count: issueRows.length,
+          collapsed: subCollapsed,
+          aggregateSpan: sectionSpan(issueRows),
+          assign,
+          bucket,
+        });
+        if (subCollapsed) continue;
+        issueRows.forEach(({ issue, span }, index) => {
+          rows.push({ kind: 'issue', issue, span, index, assign, bucket });
+        });
+        if (issueGroup.assign && sub.assign && canAddTo(assign)) {
+          rows.push({ kind: 'add', key, assign });
+        }
+      }
+    }
+  }
+
+  // The date range the track covers: the group aggregates, so it spans every
+  // issue whether or not its section is expanded.
+  let min: Date | null = null;
+  let max: Date | null = null;
+  for (const row of rows) {
+    if (row.kind !== 'group' || !row.aggregateSpan) continue;
+    if (!min || row.aggregateSpan.start < min) min = row.aggregateSpan.start;
+    if (!max || row.aggregateSpan.end > max) max = row.aggregateSpan.end;
+  }
+
+  return { rows, ...buildDayTrack({ min, max, viewportW, labelW, dayW }) };
+}

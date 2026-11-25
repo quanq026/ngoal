@@ -1,0 +1,71 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# builds
+dist
+.next
+out
+build
+
+# turbo
+.turbo
+
+# env
+.env
+.env.local
+.env.*.local
+.env.test
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editors
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# misc
+.DS_Store
+*.pem
+coverage
+.playwright-mcp
+
+# typescript incremental build cache
+*.tsbuildinfo
+
+# local agent tooling (may contain credentials)
+.codex/
+.claude/settings.local.json
+
+# agent scratch space (test docs, drafts)
+.workspace/
+
+# Legacy / unused upstream root files & directories (kept local-only, untracked in nGoal)
+CHANGELOG.md
+ICLA.md
+TELEMETRY.md
+AGENTS.md
+CLAUDE.md
+DESIGN.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+.release-please-manifest.json
+release-please-config.json
+docker-compose.pro.yml
+docker-compose.coolify.yml
+docker-compose.coolify-images.yml
+docker-compose.coolify-pro.yml
+docker-compose.test.yml
+.env.test.example
+.agents/
+.claude/
+charts/
+docs/
+assets/
+

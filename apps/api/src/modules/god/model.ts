@@ -1,0 +1,376 @@
+import { t } from 'elysia';
+import { REGISTRATION_MODES } from '@repo/auth';
+import { LOCALES } from '@repo/mailer';
+import { pageQueryFields, pageResponse } from '#shared/pagination';
+import { PermissionMatrixSchema } from '#shared/permissions';
+import { USER_KINDS } from './service';
+
+const encryption = t.UnionEnum(['none', 'ssl', 'tls']);
+const smtpAuth = t.UnionEnum(['password', 'microsoft365']);
+
+const EMAIL_DOMAIN_PATTERN = '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9-]{2,63}$';
+
+// Lowercase domains, compared with the part of an address after the "@".
+export const EmailDomains = t.Array(t.String({ pattern: EMAIL_DOMAIN_PATTERN }), {
+  maxItems: 100,
+  uniqueItems: true,
+});
+
+const MAX_AUTH_RATE_LIMIT = 1000;
+
+const rateLimitField = (description: string) =>
+  t.Integer({ minimum: 1, maximum: MAX_AUTH_RATE_LIMIT, description });
+
+export const userParams = t.Object({ userId: t.String() });
+
+export const projectParams = t.Object({ projectId: t.Numeric() });
+
+export const scimGroupParams = t.Object({ groupId: t.String() });
+
+export const roleParams = t.Object({ roleId: t.Numeric() });
+
+export const listUsersQuery = t.Object({
+  search: t.Optional(t.String()),
+  // Agent bot users are accounts too, but they are managed on a project's AI
+  // Agents screen, so the directory lists people unless asked otherwise.
+  kind: t.Optional(t.UnionEnum([...USER_KINDS])),
+  ...pageQueryFields,
+});
+
+// The query every searchable directory listing takes: the projects, the teams, and a
+// team's own projects and members.
+export const searchPageQuery = t.Object({
+  search: t.Optional(t.String()),
+  ...pageQueryFields,
+});
+
+export const deleteUserQuery = t.Object({
+  // Delete the projects this user owns alone along with the account. Every
+  // issue, comment and attachment in them goes too.
+  withProjects: t.Optional(t.Boolean()),
+});
+
+export const AuthSettingsResponse = t.Object({
+  registration: t.UnionEnum([...REGISTRATION_MODES]),
+  requireEmailVerification: t.Boolean(),
+  magicLink: t.Boolean(),
+  emailPassword: t.Boolean(),
+  trustProviderEmails: t.Boolean(),
+  personalWorkspaces: t.Boolean(),
+  inviteTtlDays: t.Integer(),
+  inviteSearch: t.Boolean(),
+  allowedEmailDomains: t.Array(t.String()),
+  signInRateLimit: t.Integer(),
+  emailRateLimit: t.Integer(),
+  magicLinkRateLimit: t.Integer(),
+  // The settings that depend on outbound email cannot be turned on without a mail
+  // provider, and the UI explains why.
+  hasEmailProvider: t.Boolean(),
+  // Password sign-in cannot be turned off without another way in, and the UI
+  // explains why.
+  hasSsoProvider: t.Boolean(),
+});
+
+export const AuthSettingsBody = t.Object({
+  // t.UnionEnum defaults to its first value, which would fill in the mode for a request
+  // that leaves it out and so reset it; the update is partial.
+  registration: t.Optional(t.UnionEnum([...REGISTRATION_MODES], { default: undefined })),
+  requireEmailVerification: t.Optional(t.Boolean()),
+  magicLink: t.Optional(t.Boolean()),
+  emailPassword: t.Optional(t.Boolean()),
+  trustProviderEmails: t.Optional(t.Boolean()),
+  personalWorkspaces: t.Optional(t.Boolean()),
+  // The cap keeps createdAt plus the lifetime inside the range a Date can hold.
+  inviteTtlDays: t.Optional(t.Integer({ minimum: 0, maximum: 3650 })),
+  inviteSearch: t.Optional(t.Boolean()),
+  allowedEmailDomains: t.Optional(EmailDomains),
+  // At least 1: the limits are what stops password guessing and mail floods.
+  signInRateLimit: t.Optional(
+    rateLimitField(
+      'Sign-in, sign-up and password or email changes one address may send per 10 seconds.',
+    ),
+  ),
+  emailRateLimit: t.Optional(
+    rateLimitField('Password reset and confirmation emails one address may request per minute.'),
+  ),
+  magicLinkRateLimit: t.Optional(
+    rateLimitField('Sign-in link requests and openings one address may send per minute.'),
+  ),
+});
+
+export const EmailSettingsResponse = t.Object({
+  smtp: t.Object({
+    enabled: t.Boolean(),
+    host: t.String(),
+    port: t.Nullable(t.Number()),
+    encryption,
+    username: t.String(),
+    hasPassword: t.Boolean(),
+    timeout: t.Nullable(t.Number()),
+    auth: smtpAuth,
+    oauth: t.Object({ tenantId: t.String(), clientId: t.String(), hasClientSecret: t.Boolean() }),
+  }),
+  resend: t.Object({ enabled: t.Boolean(), hasApiKey: t.Boolean() }),
+  from: t.String(),
+  // Whether projects may deliver their notifications through this provider instead
+  // of configuring one of their own.
+  allowProjects: t.Boolean(),
+});
+
+export const EmailSettingsBody = t.Object({
+  smtp: t.Optional(
+    t.Object({
+      enabled: t.Boolean(),
+      host: t.String(),
+      port: t.Nullable(t.Integer({ minimum: 1, maximum: 65535 })),
+      encryption,
+      username: t.String(),
+      password: t.Optional(t.String()),
+      timeout: t.Nullable(t.Integer({ minimum: 1 })),
+      auth: t.Optional(smtpAuth),
+      oauth: t.Optional(
+        t.Object({
+          tenantId: t.String({ maxLength: 128 }),
+          clientId: t.String({ maxLength: 128 }),
+          clientSecret: t.Optional(t.String({ maxLength: 1024 })),
+        }),
+      ),
+    }),
+  ),
+  resend: t.Optional(t.Object({ enabled: t.Boolean(), apiKey: t.Optional(t.String()) })),
+  from: t.Optional(t.String()),
+  allowProjects: t.Optional(t.Boolean()),
+});
+
+export const EmailTestResponse = t.Object({ recipient: t.String() });
+
+const EmailText = t.Object({
+  subject: t.String({ maxLength: 500 }),
+  body: t.String({ maxLength: 20_000 }),
+  button: t.String({ maxLength: 200 }),
+});
+
+const EmailLayout = t.Object({
+  html: t.String({ maxLength: 200_000 }),
+  css: t.String({ maxLength: 100_000 }),
+});
+
+const EmailTextByLocale = t.Record(t.String(), EmailText);
+
+export const EmailTemplatesBody = t.Object({
+  edits: t.Record(t.String(), EmailTextByLocale),
+  layout: t.Nullable(EmailLayout),
+});
+
+export const EmailDraftBody = t.Object({
+  key: t.String(),
+  locale: t.UnionEnum([...LOCALES]),
+  text: EmailText,
+  layout: EmailLayout,
+});
+
+export const EmailTemplatesResponse = t.Object({
+  templates: t.Array(
+    t.Object({
+      key: t.String(),
+      group: t.String(),
+      variables: t.Array(t.String()),
+      hasLink: t.Boolean(),
+      defaults: EmailTextByLocale,
+      edits: EmailTextByLocale,
+    }),
+  ),
+  layout: EmailLayout,
+  defaultLayout: EmailLayout,
+  placeholders: t.Array(t.Object({ name: t.String(), required: t.Boolean() })),
+  canSend: t.Boolean(),
+});
+
+export const EmailPreviewResponse = t.Object({
+  subject: t.String(),
+  text: t.String(),
+  html: t.String(),
+  from: t.Nullable(t.String()),
+});
+
+export const GoogleSettingsResponse = t.Object({
+  enabled: t.Boolean(),
+  clientId: t.String(),
+  hasClientSecret: t.Boolean(),
+  // The value to register in the Google Cloud console. Derived from the API origin,
+  // so the UI shows it rather than asking the owner to assemble it.
+  redirectUri: t.String(),
+});
+
+export const GoogleSettingsBody = t.Object({
+  enabled: t.Optional(t.Boolean()),
+  clientId: t.Optional(t.String()),
+  clientSecret: t.Optional(t.String()),
+});
+
+export const OidcSettingsResponse = t.Object({
+  enabled: t.Boolean(),
+  label: t.String(),
+  discoveryUrl: t.String(),
+  clientId: t.String(),
+  hasClientSecret: t.Boolean(),
+  scopes: t.Array(t.String()),
+  pkce: t.Boolean(),
+  // The value to register with the identity provider. Derived from the API origin,
+  // so the UI shows it rather than asking the owner to assemble it.
+  redirectUri: t.String(),
+});
+
+export const OidcSettingsBody = t.Object({
+  enabled: t.Optional(t.Boolean()),
+  label: t.Optional(t.String({ maxLength: 60 })),
+  discoveryUrl: t.Optional(t.String({ maxLength: 2048 })),
+  clientId: t.Optional(t.String({ maxLength: 512 })),
+  clientSecret: t.Optional(t.String({ maxLength: 512 })),
+  scopes: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 64 }), { maxItems: 32 })),
+  pkce: t.Optional(t.Boolean()),
+});
+
+export const StorageSettingsBody = t.Object({
+  maxAttachmentMb: t.Optional(t.Integer({ minimum: 1, maximum: 10240 })),
+  maxAvatarMb: t.Optional(t.Integer({ minimum: 1, maximum: 1024 })),
+  attachmentMimeTypes: t.Optional(t.Array(t.String({ minLength: 1 }))),
+  projectQuotaMb: t.Optional(t.Integer({ minimum: 0 })),
+});
+
+export const TelegramSettingsResponse = t.Object({
+  enabled: t.Boolean(),
+  // Resolved from Telegram when the token is saved. Shown so the administrator can
+  // confirm which bot the token belongs to, and used to build the link deep link.
+  botUsername: t.String(),
+  hasBotToken: t.Boolean(),
+});
+
+export const TelegramSettingsBody = t.Object({
+  enabled: t.Optional(t.Boolean()),
+  botToken: t.Optional(t.String()),
+});
+
+const InstanceUserResponse = t.Object({
+  id: t.String(),
+  name: t.String(),
+  email: t.String(),
+  image: t.Nullable(t.String()),
+  emailVerified: t.Boolean(),
+  role: t.String(),
+  isAgent: t.Boolean(),
+  providers: t.Array(t.String()),
+  projectCount: t.Number(),
+  active: t.Boolean(),
+  activeLock: t.Nullable(t.UnionEnum(['owner', 'agent', 'scim'])),
+  lastSeenAt: t.Nullable(t.String()),
+  createdAt: t.String(),
+});
+
+export const InstanceUserDetailResponse = t.Composite([
+  InstanceUserResponse,
+  t.Object({
+    projects: t.Array(
+      t.Object({
+        projectId: t.Number(),
+        projectKey: t.String(),
+        projectName: t.String(),
+        role: t.UnionEnum(['owner', 'member']),
+        roleId: t.Nullable(t.Number()),
+        roleName: t.Nullable(t.String()),
+        permissions: PermissionMatrixSchema,
+        ownerCount: t.Number(),
+        inOwnWorkspace: t.Boolean(),
+        joinedAt: t.String(),
+      }),
+    ),
+  }),
+]);
+
+export const InstanceUserPageResponse = pageResponse(InstanceUserResponse);
+
+const InstanceProjectResponse = t.Object({
+  id: t.Number(),
+  key: t.String(),
+  name: t.String(),
+  description: t.String(),
+  mcpEnabled: t.Boolean(),
+  memberCount: t.Number(),
+  issueCount: t.Number(),
+  archivedIssueCount: t.Number(),
+  initiativeCount: t.Number(),
+  dashboardCount: t.Number(),
+  viewCount: t.Number(),
+  agentCount: t.Number(),
+  skillCount: t.Number(),
+  toolCount: t.Number(),
+  lastActivityAt: t.Nullable(t.String()),
+  createdAt: t.String(),
+});
+
+export const InstanceProjectDetailResponse = t.Composite([
+  InstanceProjectResponse,
+  t.Object({
+    members: t.Array(
+      t.Object({
+        userId: t.String(),
+        name: t.String(),
+        email: t.String(),
+        username: t.Nullable(t.String()),
+        image: t.Nullable(t.String()),
+        isAgent: t.Boolean(),
+        role: t.UnionEnum(['owner', 'member']),
+        roleId: t.Nullable(t.Number()),
+        roleName: t.Nullable(t.String()),
+        permissions: PermissionMatrixSchema,
+        description: t.String(),
+        timezone: t.String(),
+        joinedAt: t.String(),
+      }),
+    ),
+  }),
+]);
+
+export const InstanceProjectPageResponse = pageResponse(InstanceProjectResponse);
+
+export const teamParams = t.Object({ teamId: t.Numeric() });
+
+export const InstanceTeamResponse = t.Object({
+  id: t.Number(),
+  name: t.String(),
+  mcpEnabled: t.Boolean(),
+  memberCount: t.Number(),
+  projectCount: t.Number(),
+  issueCount: t.Number(),
+  agentCount: t.Number(),
+  skillCount: t.Number(),
+  toolCount: t.Number(),
+  roleCount: t.Number(),
+  createdAt: t.String(),
+});
+
+export const InstanceTeamPageResponse = pageResponse(InstanceTeamResponse);
+
+export const InstanceTeamProjectPageResponse = pageResponse(
+  t.Object({
+    id: t.Number(),
+    key: t.String(),
+    name: t.String(),
+    mcpEnabled: t.Boolean(),
+    memberCount: t.Number(),
+    issueCount: t.Number(),
+    createdAt: t.String(),
+  }),
+);
+
+export const InstanceTeamMemberPageResponse = pageResponse(
+  t.Object({
+    userId: t.String(),
+    name: t.String(),
+    email: t.String(),
+    image: t.Nullable(t.String()),
+    isAgent: t.Boolean(),
+    role: t.UnionEnum(['owner', 'manager', 'member', 'agent']),
+    joinedAt: t.String(),
+  }),
+);

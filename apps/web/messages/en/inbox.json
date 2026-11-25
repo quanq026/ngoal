@@ -1,0 +1,40 @@
+{
+  "title": "Inbox",
+  "empty": "No notifications",
+  "selectNotification": "Select a notification",
+  "backToList": "Inbox",
+  "filter": "Filter",
+  "display": "Display",
+  "notificationType": "Notification type",
+  "showRead": "Show read",
+  "showSnoozed": "Show snoozed",
+  "markAllRead": "Mark all as read",
+  "deleteAllRead": "Delete all read",
+  "deleteAllCompleted": "Delete for completed issues",
+  "deleteAllCompletedDescription": "This deletes the notifications for completed or canceled issues that match the current filters, including unread ones. This cannot be undone.",
+  "types": {
+    "assigned": "Assigned",
+    "mentioned": "Mentioned",
+    "commented": "Commented",
+    "state_changed": "Status changed",
+    "reacted": "Reacted"
+  },
+  "actions": {
+    "markRead": "Mark as read",
+    "markUnread": "Mark as unread",
+    "snooze": "Snooze",
+    "unsnooze": "Unsnooze",
+    "tomorrow": "Tomorrow",
+    "inAWeek": "In a week",
+    "pickDate": "Pick a date…"
+  },
+  "event": {
+    "someone": "Someone",
+    "assigned": "{who} assigned the issue to you",
+    "mentioned": "{who} mentioned you",
+    "commented": "{who} commented",
+    "stateChanged": "{who} changed the status from {from} to {to}",
+    "stateChangedPlain": "{who} changed the status",
+    "reacted": "{who} reacted to your comment with {emoji}"
+  }
+}
