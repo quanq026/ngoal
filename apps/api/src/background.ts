@@ -2,6 +2,8 @@ import { getJobSettings, type JobSettings } from '@repo/db';
 import { sweepStaleIssues } from '#modules/issues/auto-archive';
 import { processEmailNotificationDeliveries } from '#modules/notifications/email-delivery';
 
+const EMAIL_POLL_MS = 5_000;
+
 // The api's background jobs, started by index.ts rather than assembled into the app,
 // so importing the app in a test starts nothing.
 export function startBackgroundJobs(): void {
@@ -9,7 +11,7 @@ export function startBackgroundJobs(): void {
   startLoop(
     'email-notifications',
     sendEmailNotifications,
-    (jobs) => jobs.notifications.pollIntervalMs,
+    () => EMAIL_POLL_MS,
   );
 }
 

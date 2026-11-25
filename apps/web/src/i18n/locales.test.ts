@@ -3,13 +3,8 @@ import { describe, it } from 'node:test';
 import { LOCALES, localeDirection } from './locales';
 
 describe('localeDirection', () => {
-  it('mirrors the interface for Arabic and Persian', () => {
-    assert.equal(localeDirection('ar'), 'rtl');
-    assert.equal(localeDirection('fa'), 'rtl');
-  });
-
-  it('leaves every other shipped language left to right', () => {
-    for (const locale of LOCALES.filter((l) => l !== 'ar' && l !== 'fa')) {
+  it('keeps supported English locales left to right', () => {
+    for (const locale of LOCALES) {
       assert.equal(localeDirection(locale), 'ltr');
     }
   });

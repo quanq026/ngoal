@@ -10,8 +10,6 @@ FROM base AS install
 COPY package.json bun.lock ./
 COPY apps/web/package.json ./apps/web/
 COPY apps/api/package.json ./apps/api/
-COPY apps/worker/package.json ./apps/worker/
-COPY apps/bot/package.json ./apps/bot/
 COPY packages/db/package.json ./packages/db/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/agent-tools/package.json ./packages/agent-tools/
@@ -20,7 +18,6 @@ COPY packages/editor/package.json ./packages/editor/
 COPY packages/mailer/package.json ./packages/mailer/
 COPY packages/net/package.json ./packages/net/
 COPY packages/storage/package.json ./packages/storage/
-COPY packages/runner/package.json ./packages/runner/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 RUN bun install --frozen-lockfile --filter web
 

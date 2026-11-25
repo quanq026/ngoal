@@ -65,7 +65,7 @@ docker-compose.test.yml
 .env.test.example
 .agents/
 .claude/
-charts/
+/charts/
 docs/
 assets/
 

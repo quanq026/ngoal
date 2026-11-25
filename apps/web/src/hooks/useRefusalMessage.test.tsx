@@ -5,7 +5,6 @@ import type { Root } from 'react-dom/client';
 import { NextIntlClientProvider } from 'next-intl';
 import { JSDOM } from 'jsdom';
 import auth from '../../messages/en/auth.json';
-import es from '../../messages/es-ES/auth.json';
 import { useRefusalMessage } from './useRefusalMessage';
 
 // The server's messages are English; a form shows the visitor's language instead.
@@ -78,10 +77,6 @@ describe('useRefusalMessage', () => {
   it('words a refusal by its code, in the visitor language', () => {
     const err = refusal('Invalid email or password', 'INVALID_EMAIL_OR_PASSWORD', 401);
     assert.equal(render(err), auth.errors.invalidCredentials);
-    assert.equal(
-      render(err, { locale: 'es-ES', messages: { auth: es } }),
-      es.errors.invalidCredentials,
-    );
   });
 
   it('words a rate-limited request by its status', () => {

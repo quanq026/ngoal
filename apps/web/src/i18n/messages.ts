@@ -33,8 +33,8 @@ import updates from '../../messages/en/updates.json';
 import views from '../../messages/en/views.json';
 import whatsNew from '../../messages/en/whatsNew.json';
 import workItems from '../../messages/en/workItems.json';
-import { cloudMessages, loadCloudMessages } from '@/cloud';
-import { DEFAULT_LOCALE, type Locale } from './locales';
+import { cloudMessages } from '@/cloud';
+import { type Locale } from './locales';
 
 // English is static: it is the fallback for every other language and the shape the
 // `t('…')` keys are typed against. The hosted build's English is merged in, so its keys
@@ -77,31 +77,13 @@ const coreMessages = {
   onboarding,
 };
 
-const NAMESPACES = Object.keys(coreMessages) as (keyof typeof coreMessages)[];
-
 const defaultMessages = mergeMessages(coreMessages, cloudMessages) as typeof coreMessages &
   typeof cloudMessages;
 
 export type Messages = typeof defaultMessages;
 
-export async function loadMessages(locale: Locale): Promise<Messages> {
-  if (locale === DEFAULT_LOCALE) return defaultMessages;
-
-  const [translated, cloud] = await Promise.all([
-    Promise.all(
-      NAMESPACES.map(async (ns) => [
-        ns,
-        (await import(`../../messages/${locale}/${ns}.json`)).default,
-      ]),
-    ),
-    loadCloudMessages(locale),
-  ]);
-
-  // A key still untranslated renders its English text instead of the raw key path.
-  return mergeMessages(
-    defaultMessages,
-    mergeMessages(Object.fromEntries(translated), cloud),
-  ) as Messages;
+export async function loadMessages(_locale: Locale): Promise<Messages> {
+  return defaultMessages;
 }
 
 export type MessageTree = { [key: string]: string | MessageTree };
